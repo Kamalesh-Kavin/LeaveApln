@@ -1,0 +1,7 @@
+Flask==2.1.1
+slack_sdk==3.9.1
+Flask-SQLAlchemy==2.5.1
+python-dotenv==1.0.0
+pysqlite3==0.4.6
+werkzeug==2.0.3
+Flask_Migrate=4.0.7
