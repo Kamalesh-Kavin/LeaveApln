@@ -1,5 +1,6 @@
 from flask import Flask
-from .models import db
+from .models import db, User
+from .manager import create_manager
 
 def create_app():
     app = Flask(__name__)
@@ -7,7 +8,15 @@ def create_app():
 
     db.init_app(app)
     with app.app_context():
-        db.create_all()
+        try:
+            db.create_all()
+            print("Database tables created successfully.")
+            slack_id = 'U07GHFFEHDH' 
+            name = "testM"
+            result = create_manager(slack_id, name)
+            print(result)
+        except Exception as e:
+            print(f"Error creating database tables: {e}")
 
     from . import routes
     app.register_blueprint(routes.bp)

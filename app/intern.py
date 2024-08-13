@@ -1,57 +1,66 @@
-from .models import db, User, LeaveRequest
+from .models import db, User, LeaveRequest, LeaveStatus
 from .slack_bot import send_message
 from datetime import datetime, timedelta
 
-def apply_leave(user_id, start_date, end_date, reason):
+def apply_leave(user_id, start_date, end_date, reason, user_name):
     try:
-        start_date = datetime.strptime(start_date, "%Y-%m-%d")
-        end_date = datetime.strptime(end_date, "%Y-%m-%d")
-        leave_days = (end_date - start_date).days + 1 #remaining leave days
-        user = db.session.query(User).filter_by(slack_id=user_id).first()
+        start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+        end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+        leave_days = (end_date - start_date).days + 1
 
-        if user is None: #first time using bot
-            user = User(slack_id=user_id, name="Unknown", role="Intern")
+        user = User.query.filter_by(slack_id=user_id).first()
+        if user is None:
+            user = User(slack_id=user_id, name=user_name, role="Intern")
             db.session.add(user)
             db.session.commit()
-            return "User record created with default role."
 
-        # Check if leave balance is sufficient
+        current_month = datetime.now().strftime('%Y-%m')
+        if user.last_reset_month != current_month:
+            user.leave_balance = 2  # Reset to 2 days for the new month
+            user.last_reset_month = current_month
+            db.session.commit()
+
         if user.leave_balance < leave_days:
             return "Insufficient leave balance."
 
-        current_month = start_date.month
-        current_year = start_date.year
-
-        leaves_this_month = db.session.query(LeaveRequest).filter(
+        current_month_start = datetime.now().replace(day=1)
+        leaves_this_month = LeaveRequest.query.filter(
             LeaveRequest.user_id == user.id,
-            LeaveRequest.start_date >= datetime(current_year, current_month, 1),
-            LeaveRequest.end_date <= datetime(current_year, current_month + 1, 1) - timedelta(days=1)
+            LeaveRequest.start_date >= current_month_start,
+            LeaveRequest.end_date <= datetime.now().replace(day=1) + timedelta(days=31),
+            LeaveRequest.status != LeaveStatus.CANCELLED  # Exclude canceled leaves
         ).all()
-        
+
         total_leave_days_this_month = sum(
             (min(leave.end_date, end_date) - max(leave.start_date, start_date)).days + 1
             for leave in leaves_this_month
         )
-        
+
         if total_leave_days_this_month + leave_days > 2:
             return "Leave limit exceeded. You can only take a maximum of 2 days leave per month."
 
-        
-        # Add leave request
         leave_request = LeaveRequest(user_id=user.id, start_date=start_date, end_date=end_date, reason=reason)
         db.session.add(leave_request)
         user.leave_balance -= leave_days
         db.session.commit()
 
-        #notify manager 
-        manager = User.query.filter_by(role='manager').first()
-        if manager:
+        #single manager concept for now
+        manager = User.query.filter_by(role='Manager').first()
+        if not manager:
+            return "Manager not found."
+        try:
             send_message(manager.slack_id, f"{user.name} has applied for leave from {start_date} to {end_date}.")
-        return f"Leave applied successfully for {leave_days} days."
-    
+        except Exception as e:
+            print(f"Error sending message: {e}")
+
+        return (f"Leave applied successfully!\n"
+                f"User: {user_name}\n"
+                f"Leave Dates: {start_date} to {end_date}\n"
+                f"Total Leave Days: {leave_days}\n"
+                f"Remaining Leave Balance: {user.leave_balance} days.")
+
     except ValueError as e:
         return f"Invalid date format. Please use YYYY-MM-DD. Error: {e}"
-
     except Exception as e:
         return f"An error occurred: {e}"
 
@@ -59,27 +68,50 @@ def view_leave_status(user_id):
     user = User.query.filter_by(slack_id=user_id).first()
     if not user:
         return "User not found."
-    leave_requests = LeaveRequest.query.filter_by(user_id=user.id).all()
-    status_messages = [f"Leave from {lr.start_date} to {lr.end_date}: {lr.status}" for lr in leave_requests]
+
+    # Filter to show only pending leave requests
+    leave_requests = LeaveRequest.query.filter_by(user_id=user.id, status=LeaveStatus.PENDING).all()
+    if not leave_requests:
+        return "No pending leave requests found."
+
+    status_messages = [f"Leave ID: {lr.id} - From {lr.start_date} to {lr.end_date} - Reason: {lr.reason}" for lr in leave_requests]
     return "\n".join(status_messages)
+
+def view_pending_leaves(user_id):
+    user = User.query.filter_by(slack_id=user_id).first()
+    if not user:
+        return "User not found."
+    
+    pending_leaves = LeaveRequest.query.filter_by(user_id=user.id, status='PENDING').all()
+    if not pending_leaves:
+        return "You have no pending leave requests."
+    
+    response = "Your pending leave requests:\n"
+    for index, leave in enumerate(pending_leaves, start=1):
+        response += f"{index}. Leave ID: {leave.id} - From {leave.start_date} to {leave.end_date} - Reason: {leave.reason}\n"
+    response += "Please use the corresponding Leave ID to cancel a leave request."
+    return response
 
 def cancel_leave_request(user_id, leave_id):
     try:
-        leave_request = LeaveRequest.query.filter_by(id=leave_id, user_id=user_id, status='pending').first()
-        if leave_request is None:
-            return "Leave request not found."
-        if leave_request.status == 'Approved':
-            return "Cannot cancel an approved leave request."
-        user = db.session.query(User).filter_by(id=leave_request.user_id).first()
+        user = User.query.filter_by(slack_id=user_id).first()
         if user is None:
             return "User not found."
+
+        leave_request = LeaveRequest.query.filter_by(id=leave_id, user_id=user.id, status=LeaveStatus.PENDING).first()
+        if leave_request is None:
+            return "Leave request not found or not in pending status."
+
         leave_days = (leave_request.end_date - leave_request.start_date).days + 1
         user.leave_balance += leave_days
-        db.session.delete(leave_request)
+        leave_request.status = LeaveStatus.CANCELLED
         db.session.commit()
-        return "Leave request canceled successfully."
+        
+        return f"Leave request (ID: {leave_id}) cancelled successfully. Leave days added back to your balance."
+
     except Exception as e:
         return f"An error occurred: {e}"
+
 
 def view_past_leaves(user_id):
     user = User.query.filter_by(slack_id=user_id).first()

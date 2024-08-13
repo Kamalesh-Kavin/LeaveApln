@@ -1,8 +1,7 @@
-from datetime import datetime
-from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import Column, Integer, String, DateTime, Enum
-from sqlalchemy.orm import relationship
 import enum
+from sqlalchemy import Column, Integer, String, Date, Enum
+from sqlalchemy.orm import relationship
+from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
 
@@ -10,13 +9,15 @@ class LeaveStatus(enum.Enum):
     PENDING = "Pending"
     APPROVED = "Approved"
     DECLINED = "Declined"
+    CANCELLED = "Cancelled"
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     slack_id = db.Column(db.String(50), unique=True, nullable=False)
     name = db.Column(db.String(100), nullable=False)
-    role = db.Column(db.String(20), nullable=False,default='Intern')  # 'intern' or 'manager'
-    leave_balance = db.Column(db.Integer, default=20)  # default number of leaves
+    role = db.Column(db.String(20), nullable=False, default='Intern')  # 'intern' or 'manager'
+    leave_balance = db.Column(db.Integer, default=2)  # leave balance for the current month
+    last_reset_month = db.Column(db.String(7), nullable=False, default='')  # format YYYY-MM
     leave_requests = relationship("LeaveRequest", back_populates="user")
 
 class LeaveRequest(db.Model):
