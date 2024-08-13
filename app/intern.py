@@ -28,7 +28,7 @@ def apply_leave(user_id, start_date, end_date, reason, user_name):
             LeaveRequest.user_id == user.id,
             LeaveRequest.start_date >= current_month_start,
             LeaveRequest.end_date <= datetime.now().replace(day=1) + timedelta(days=31),
-            LeaveRequest.status != LeaveStatus.CANCELLED  # Exclude canceled leaves
+            LeaveRequest.status.notin_([LeaveStatus.CANCELLED, LeaveStatus.DECLINED])
         ).all()
 
         total_leave_days_this_month = sum(
@@ -49,7 +49,9 @@ def apply_leave(user_id, start_date, end_date, reason, user_name):
         if not manager:
             return "Manager not found."
         try:
+            print(manager.slack_id)
             send_message(manager.slack_id, f"{user.name} has applied for leave from {start_date} to {end_date}.")
+            print("message sent")
         except Exception as e:
             print(f"Error sending message: {e}")
 
@@ -63,19 +65,6 @@ def apply_leave(user_id, start_date, end_date, reason, user_name):
         return f"Invalid date format. Please use YYYY-MM-DD. Error: {e}"
     except Exception as e:
         return f"An error occurred: {e}"
-
-def view_leave_status(user_id):
-    user = User.query.filter_by(slack_id=user_id).first()
-    if not user:
-        return "User not found."
-
-    # Filter to show only pending leave requests
-    leave_requests = LeaveRequest.query.filter_by(user_id=user.id, status=LeaveStatus.PENDING).all()
-    if not leave_requests:
-        return "No pending leave requests found."
-
-    status_messages = [f"Leave ID: {lr.id} - From {lr.start_date} to {lr.end_date} - Reason: {lr.reason}" for lr in leave_requests]
-    return "\n".join(status_messages)
 
 def view_pending_leaves(user_id):
     user = User.query.filter_by(slack_id=user_id).first()
@@ -111,7 +100,6 @@ def cancel_leave_request(user_id, leave_id):
 
     except Exception as e:
         return f"An error occurred: {e}"
-
 
 def view_past_leaves(user_id):
     user = User.query.filter_by(slack_id=user_id).first()

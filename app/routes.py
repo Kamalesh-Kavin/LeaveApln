@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from .intern import apply_leave, view_leave_status, cancel_leave_request, view_past_leaves, view_leave_balance, view_pending_leaves
+from .intern import apply_leave, cancel_leave_request, view_past_leaves, view_leave_balance, view_pending_leaves
 from .manager import approve_or_decline_leave, view_intern_leave_history, view_all_pending_leaves
 from .models import User
 
@@ -28,8 +28,8 @@ def handle_leave():
         except ValueError:
             response = "Please provide the start date, end date, and reason in the format: 'start_date end_date reason'."
 
-    elif command == '/leavestatus':
-        response = view_leave_status(user_id)
+    elif command == '/pendingleave':
+        response = view_pending_leaves(user_id)
 
     elif command == '/cancelleave':
         if text == "":
