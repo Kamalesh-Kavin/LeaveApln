@@ -39,12 +39,12 @@ def approve_or_decline_leave(user_id, leave_id, action):
         if not leave_request:
             return "Leave request not found."
         leave_days = (leave_request.end_date - leave_request.start_date).days + 1
+        intern = leave_request.user
         if action.lower() == 'approve':
             leave_request.status = LeaveStatus.APPROVED
-            leave_request.user.leave_balance -= leave_days
         elif action.lower() == 'decline':
             leave_request.status = LeaveStatus.DECLINED
-            leave_request.user.leave_balance += leave_days  # Add back the leave days
+            intern.leave_balance = min(intern.leave_balance + leave_days, 2)
         else:
             return "Invalid action. Please specify 'approve' or 'decline'."
         db.session.commit()
