@@ -1,5 +1,5 @@
 from .models import db, User, LeaveRequest, LeaveStatus
-from .slack_bot import send_message
+from .slack_bot import send_message_to_manager
 from datetime import datetime, timedelta
 
 def apply_leave(user_id, start_date, end_date, reason, user_name):
@@ -50,7 +50,7 @@ def apply_leave(user_id, start_date, end_date, reason, user_name):
             return "Manager not found."
         try:
             print(manager.slack_id)
-            send_message(manager.slack_id, f"{user.name} has applied for leave from {start_date} to {end_date}.")
+            send_message_to_manager(manager.slack_id, leave_request.id, f"{user.name} has applied for leave from {start_date} to {end_date}.")
             print("message sent")
         except Exception as e:
             print(f"Error sending message: {e}")

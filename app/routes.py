@@ -1,13 +1,46 @@
 from flask import Blueprint, request, jsonify
 from .intern import apply_leave, cancel_leave_request, view_past_leaves, view_leave_balance, view_pending_leaves
-from .manager import approve_or_decline_leave, view_intern_leave_history, view_all_pending_leaves
+from .manager import approve_or_decline_leave, view_intern_leave_history, view_all_pending_leaves, handle_interactive_message
 from .models import User
+import json
 
 bp = Blueprint('routes', __name__)
 
 @bp.route('/')
 def home():
     return "Welcome to the Leave Bot Application!!"
+
+@bp.route('/slack/interactions', methods=['POST'])
+def handle_interactions():
+    print("HIII")
+    print(request.content_type)
+    if request.content_type != 'application/x-www-form-urlencoded':
+        return jsonify(error="Unsupported Media Type"), 415
+    payload = request.form.get('payload')
+    
+    if not payload:
+        return jsonify(error="No payload found"), 400
+
+    try:
+        # Parse the payload JSON string
+        data = json.loads(payload)
+    except json.JSONDecodeError:
+        return jsonify(error="Invalid JSON in payload"), 400
+
+    action_id = data.get('actions', [{}])[0].get('action_id')
+    leave_id = data.get('actions', [{}])[0].get('value')
+    user_id = data.get('user', {}).get('id')
+
+    print(f"Action ID: {action_id}, Leave ID: {leave_id}, User ID: {user_id}")
+
+    if action_id == 'approve':
+        response = approve_or_decline_leave(user_id, int(leave_id), 'approve')
+    elif action_id == 'decline':
+        response = approve_or_decline_leave(user_id, int(leave_id), 'decline')
+    else:
+        response = "Unknown action."
+    
+    return jsonify(response_type='ephemeral', text=response)
 
 @bp.route('/slack/leave', methods=['POST'])
 def handle_leave():

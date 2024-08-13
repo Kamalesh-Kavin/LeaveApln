@@ -1,5 +1,5 @@
 from .models import db, User, LeaveRequest, LeaveStatus
-from .slack_bot import send_message
+from .slack_bot import send_message_from_manager
 
 from app.models import db, User
 
@@ -48,9 +48,8 @@ def approve_or_decline_leave(user_id, leave_id, action):
         else:
             return "Invalid action. Please specify 'approve' or 'decline'."
         db.session.commit()
-
         # Notify the intern
-        send_message(leave_request.user.slack_id, f"Your leave request from {leave_request.start_date} to {leave_request.end_date} has been {leave_request.status.value.lower()}.")
+        send_message_from_manager(leave_request.user.slack_id, f"Your leave request from {leave_request.start_date} to {leave_request.end_date} has been {leave_request.status.value.lower()}.")
 
         return f"Leave request has been {leave_request.status.value.lower()}."
 
@@ -67,3 +66,33 @@ def view_intern_leave_history(intern_name):
         return f"No leave history found for {intern.name}."
     leave_history = [f"Leave ID: {lr.id} - From {lr.start_date} to {lr.end_date}: {lr.status}" for lr in leave_requests]
     return "\n".join(leave_history)
+
+
+def handle_interactive_message(payload):
+    try:
+        # Extract action and value from the payload
+        actions = payload.get('actions', [])
+        if not actions:
+            return "No actions found in the payload."
+        action = actions[0]  # Assuming a single action for simplicity
+        action_id = action.get('action_id')
+        print(action_id)
+        value = action.get('value')
+        # Extract leave_id and action type
+        if action_id in ['approve', 'decline']:
+            print("here")
+            # Extract leave_id from the original text or payload
+            leave_id = int(payload.get('message', {}).get('text', '').split()[0])
+            print(leave_id)
+            if action_id == 'approve':
+                action = 'approve'
+            elif action_id == 'decline':
+                action = 'decline'
+            
+            # Call the function to approve or decline
+            response = approve_or_decline_leave(payload['user']['id'], leave_id, action)
+            return response
+        else:
+            return "Unknown action."
+    except Exception as e:
+        return f"An error occurred: {e}"
