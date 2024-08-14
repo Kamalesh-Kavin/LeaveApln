@@ -3,9 +3,57 @@ import certifi
 import requests
 import os
 import json
+from slack_sdk.errors import SlackApiError
+
 slack_token = os.getenv("SLACK_BOT_TOKEN")
 slack_token="xoxb-7584405679664-7561620439074-eux3WjC9B1KYA1Oq9tAVWguM"
 client = WebClient(token=slack_token)
+
+def publish_home_tab(user_id):
+    try:
+        response = client.views_publish(
+            user_id=user_id,
+            view={
+                "type": "home",
+                "blocks": [
+                    {
+                        "type": "section",
+                        "block_id": "home_intro",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": "*Welcome to the Leave Bot!*"
+                        }
+                    },
+                    {
+                        "type": "actions",
+                        "block_id": "home_actions",
+                        "elements": [
+                            {
+                                "type": "button",
+                                "text": {
+                                    "type": "plain_text",
+                                    "text": "Apply Leave",
+                                    "emoji": True
+                                },
+                                "action_id": "apply_leave_button"
+                            },
+                            {
+                                "type": "button",
+                                "text": {
+                                    "type": "plain_text",
+                                    "text": "Leave History",
+                                    "emoji": True
+                                },
+                                "action_id": "leave_history_button"
+                            }
+                        ]
+                    }
+                ]
+            }
+        )
+        print(f"Home tab published: {response}")
+    except SlackApiError as e:
+        print(f"Error publishing home tab: {e.response['error']}")
 
 def update_message(channel_id, message_ts, updated_text, updated_blocks):
     try:
@@ -20,11 +68,7 @@ def update_message(channel_id, message_ts, updated_text, updated_blocks):
             "text": updated_text,
             "blocks": updated_blocks
         }
-        
-        # Send the request to update the Slack message
         response = requests.post(url, headers=headers, json=payload, verify=certifi.where())
-        
-        # Check if the response is successful
         if not response.ok or not response.json().get('ok', False):
             raise Exception(f"Slack API Error: {response.json().get('error')}")
 
