@@ -8,8 +8,8 @@ import os
 
 bp = Blueprint('routes', __name__)
 slack_token = os.getenv("SLACK_BOT_TOKEN")
-#print(slack_token)
-#slack_token="xoxb-7584405679664-7561620439074-eux3WjC9B1KYA1Oq9tAVWguM"
+print(slack_token)
+slack_token="xoxb-7584405679664-7561620439074-lHgAfJv2WjE2PDK3RTpJf74m"
 
 @bp.route('/')
 def home():
@@ -21,22 +21,13 @@ def app_home():
     data = request.json
     print()
     print(data)
-    
-    # Extract user ID
     user_id = data.get('event', {}).get('user') or data.get('event', {}).get('message', {}).get('user') or data.get('event', {}).get('edited', {}).get('user')
-    
     if not user_id:
         return jsonify({"status": "error", "message": "User ID not found"}), 400
-    
-    # Fetch user information
     user = User.query.filter_by(slack_id=user_id).first()
     if not user:
         return jsonify({"status": "error", "message": "User not found"}), 404
-
-    # Check if the user is an intern
     is_intern = user.role == 'Intern'
-
-    # Define default blocks for the home UI
     blocks = [
         {
             "type": "section",
@@ -73,7 +64,6 @@ def app_home():
             ]
         }
     ]
-
     if is_intern:
         pending_leaves_blocks = view_pending_leaves_ui(user_id)
         blocks.append({
@@ -190,6 +180,7 @@ def handle_interactions():
                 'users': user_id
             }
         )
+        print(user_id)
         if response.status_code != 200:
             return response.text
         channel_id = response.json().get('channel', {}).get('id')
@@ -358,6 +349,11 @@ def handle_interactions():
             user_name = get_user_name(user_id)
             response_message = apply_leave(user_id, start_date, end_date, reason, user_name)
             print(response_message)
+            update_response = update_home_ui(user_id, slack_token)
+
+            if 'error' in dm_response or update_response.status_code != 200:
+                return jsonify({"status": "error", "message": "Failed to update the home UI or send DM."}), 500
+            return jsonify({"status": "ok"})
             update_modal_view = {
                 "type": "modal",
                 "callback_id": "apply_leave_modal",
@@ -539,7 +535,7 @@ def handle_interactions():
         result = cancel_leave_request(user_id, leave_id)
         update_response = update_home_ui(user_id, slack_token)
         response_message = f"Leave request (ID: {leave_id}) cancelled successfully. Leave days added back to your balance."
-        dm_response = send_dm_message(user_id, response_message, slack_token)
+        dm_response = send_dm_message(user_id, response_message)
         
         if 'error' in dm_response or update_response.status_code != 200:
             return jsonify({"status": "error", "message": "Failed to update the home UI or send DM."}), 500
