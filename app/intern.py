@@ -66,6 +66,45 @@ def apply_leave(user_id, start_date, end_date, reason, user_name):
     except Exception as e:
         return f"An error occurred: {e}"
 
+def view_pending_leaves_ui(user_id):
+    user = User.query.filter_by(slack_id=user_id).first()
+    if not user:
+        return []
+
+    pending_leaves = LeaveRequest.query.filter_by(user_id=user.id, status='PENDING').all()
+    if not pending_leaves:
+        return [
+            {
+                "type": "section",
+                "block_id": "no_pending_leaves",
+                "text": {
+                    "type": "plain_text",
+                    "text": "You have no pending leave requests."
+                }
+            }
+        ]
+
+    leave_blocks = []
+    for leave in pending_leaves:
+        leave_blocks.append({
+            "type": "section",
+            "block_id": f"pending_leave_{leave.id}",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Leave ID:* {leave.id}\n*From:* {leave.start_date}\n*To:* {leave.end_date}\n*Reason:* {leave.reason}"
+            },
+            "accessory": {
+                "type": "button",
+                "text": {
+                    "type": "plain_text",
+                    "text": "Cancel"
+                },
+                "action_id": f"cancel_{leave.id}",
+                "style": "danger"
+            }
+        })
+    return leave_blocks
+
 def view_pending_leaves(user_id):
     user = User.query.filter_by(slack_id=user_id).first()
     if not user:

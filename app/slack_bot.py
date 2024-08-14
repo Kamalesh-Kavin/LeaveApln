@@ -9,52 +9,6 @@ slack_token = os.getenv("SLACK_BOT_TOKEN")
 slack_token="xoxb-7584405679664-7561620439074-eux3WjC9B1KYA1Oq9tAVWguM"
 client = WebClient(token=slack_token)
 
-def publish_home_tab(user_id):
-    try:
-        response = client.views_publish(
-            user_id=user_id,
-            view={
-                "type": "home",
-                "blocks": [
-                    {
-                        "type": "section",
-                        "block_id": "home_intro",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": "*Welcome to the Leave Bot!*"
-                        }
-                    },
-                    {
-                        "type": "actions",
-                        "block_id": "home_actions",
-                        "elements": [
-                            {
-                                "type": "button",
-                                "text": {
-                                    "type": "plain_text",
-                                    "text": "Apply Leave",
-                                    "emoji": True
-                                },
-                                "action_id": "apply_leave_button"
-                            },
-                            {
-                                "type": "button",
-                                "text": {
-                                    "type": "plain_text",
-                                    "text": "Leave History",
-                                    "emoji": True
-                                },
-                                "action_id": "leave_history_button"
-                            }
-                        ]
-                    }
-                ]
-            }
-        )
-        print(f"Home tab published: {response}")
-    except SlackApiError as e:
-        print(f"Error publishing home tab: {e.response['error']}")
-
 def update_message(channel_id, message_ts, updated_text, updated_blocks):
     try:
         url = "https://slack.com/api/chat.update"
