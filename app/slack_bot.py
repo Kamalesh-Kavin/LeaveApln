@@ -3,11 +3,37 @@ import certifi
 import requests
 import os
 import json
-
 slack_token = os.getenv("SLACK_BOT_TOKEN")
-slack_token="xoxb-7584405679664-7561620439074-SeSX666k57aTi8BXnCP6kFcW"
+slack_token="xoxb-7584405679664-7561620439074-eux3WjC9B1KYA1Oq9tAVWguM"
 client = WebClient(token=slack_token)
 
+def update_message(channel_id, message_ts, updated_text, updated_blocks):
+    try:
+        url = "https://slack.com/api/chat.update"
+        headers = {
+            "Authorization": f"Bearer {slack_token}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "channel": channel_id,
+            "ts": message_ts,
+            "text": updated_text,
+            "blocks": updated_blocks
+        }
+        
+        # Send the request to update the Slack message
+        response = requests.post(url, headers=headers, json=payload, verify=certifi.where())
+        
+        # Check if the response is successful
+        if not response.ok or not response.json().get('ok', False):
+            raise Exception(f"Slack API Error: {response.json().get('error')}")
+
+        print(f"Message updated successfully: {response.json()}")
+        return response.json()
+
+    except Exception as e:
+        print(f"Error updating message: {e}")
+        raise
 
 def send_message_to_manager(slack_id, leave_id, message):
     url = "https://slack.com/api/chat.postMessage"

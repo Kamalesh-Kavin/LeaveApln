@@ -33,12 +33,13 @@ def handle_interactions():
 
     print(f"Action ID: {action_id}, Leave ID: {leave_id}, User ID: {user_id}")
 
-    if action_id == 'approve':
-        response = approve_or_decline_leave(user_id, int(leave_id), 'approve')
-    elif action_id == 'decline':
-        response = approve_or_decline_leave(user_id, int(leave_id), 'decline')
-    else:
-        response = "Unknown action."
+    response = handle_interactive_message(data)
+    # if action_id == 'approve':
+    #     response = approve_or_decline_leave(user_id, int(leave_id), 'approve')
+    # elif action_id == 'decline':
+    #     response = approve_or_decline_leave(user_id, int(leave_id), 'decline')
+    # else:
+    #     response = "Unknown action."
     
     return jsonify(response_type='ephemeral', text=response)
 

@@ -1,5 +1,5 @@
 from .models import db, User, LeaveRequest, LeaveStatus
-from .slack_bot import send_message_from_manager
+from .slack_bot import send_message_from_manager, update_message
 
 from app.models import db, User
 
@@ -70,7 +70,7 @@ def view_intern_leave_history(intern_name):
 
 def handle_interactive_message(payload):
     try:
-        # Extract action and value from the payload
+        print("TESTTTTT")
         actions = payload.get('actions', [])
         if not actions:
             return "No actions found in the payload."
@@ -78,19 +78,50 @@ def handle_interactive_message(payload):
         action_id = action.get('action_id')
         print(action_id)
         value = action.get('value')
+        channel_id = payload['channel']['id']
+        message_ts = payload['message']['ts']
+        print(channel_id, message_ts)
         # Extract leave_id and action type
         if action_id in ['approve', 'decline']:
             print("here")
             # Extract leave_id from the original text or payload
-            leave_id = int(payload.get('message', {}).get('text', '').split()[0])
+            #leave_id = int(payload.get('message', {}).get('text', '').split()[0])
+            leave_id = int(value)
             print(leave_id)
-            if action_id == 'approve':
-                action = 'approve'
-            elif action_id == 'decline':
-                action = 'decline'
+            action_type = 'approve' if action_id == 'approve' else 'decline'
             
             # Call the function to approve or decline
-            response = approve_or_decline_leave(payload['user']['id'], leave_id, action)
+            response = approve_or_decline_leave(payload['user']['id'], leave_id, action_type)
+            print("REEE: ",response)
+            # Prepare the updated blocks to disable the buttons
+            updated_text = f"Leave request {leave_id} has been {action_type}d by <@{payload['user']['id']}>."
+            updated_blocks = [
+                {
+                    "type": "section",
+                    "block_id": "section-identifier",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": updated_text
+                    }
+                },
+                {
+                    "type": "section",
+                    "block_id": "status-identifier",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"*Status:* {'Approved' if action_id == 'approve' else 'Declined'}"
+                    }
+                }
+            ]
+            print()
+            print(updated_text)
+            print(updated_blocks)
+            # if action_id == 'approve':
+            #     action = 'approve'
+            # elif action_id == 'decline':
+            #     action = 'decline'
+            update_message(channel_id, message_ts, updated_text, updated_blocks)
+
             return response
         else:
             return "Unknown action."
