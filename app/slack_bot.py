@@ -4,9 +4,10 @@ import requests
 import os
 import json
 from slack_sdk.errors import SlackApiError
+from dotenv import load_dotenv
 
+load_dotenv(dotenv_path='../.env')
 slack_token = os.getenv("SLACK_BOT_TOKEN")
-slack_token="xoxb-7584405679664-7561620439074-lHgAfJv2WjE2PDK3RTpJf74m"
 client = WebClient(token=slack_token)
 
 def update_message(channel_id, message_ts, updated_text, updated_blocks):

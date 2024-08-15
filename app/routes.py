@@ -5,11 +5,12 @@ from .models import User
 import json
 import requests
 import os
+from dotenv import load_dotenv
+
+load_dotenv(dotenv_path='../.env')
 
 bp = Blueprint('routes', __name__)
 slack_token = os.getenv("SLACK_BOT_TOKEN")
-print(slack_token)
-slack_token="xoxb-7584405679664-7561620439074-lHgAfJv2WjE2PDK3RTpJf74m"
 
 @bp.route('/')
 def home():
@@ -17,16 +18,24 @@ def home():
 
 @bp.route('/slack/apps_home', methods=['POST'])
 def app_home():
+    # to enable link
+    # if request.json.get('type') == 'url_verification':
+    #     return jsonify(challenge=request.json.get('challenge'))
+
     print("HOME UI Loading...")
     data = request.json
     print()
     print(data)
     user_id = data.get('event', {}).get('user') or data.get('event', {}).get('message', {}).get('user') or data.get('event', {}).get('edited', {}).get('user')
+    print(user_id)
     if not user_id:
         return jsonify({"status": "error", "message": "User ID not found"}), 400
     user = User.query.filter_by(slack_id=user_id).first()
+    print()
+    print(user)
     if not user:
         return jsonify({"status": "error", "message": "User not found"}), 404
+    print("hi")
     is_intern = user.role == 'Intern'
     blocks = [
         {
@@ -322,7 +331,7 @@ def handle_interactions():
             return user_info.get('user', {}).get('real_name', 'User')
         else:
             return 'User'
-        
+    print("HELLLLLOOOO")   
     if request.content_type != 'application/x-www-form-urlencoded':
         return jsonify({"error": "Unsupported Media Type"}), 415
     payload = request.form.get('payload')
@@ -349,11 +358,11 @@ def handle_interactions():
             user_name = get_user_name(user_id)
             response_message = apply_leave(user_id, start_date, end_date, reason, user_name)
             print(response_message)
-            update_response = update_home_ui(user_id, slack_token)
+            #update_response = update_home_ui(user_id, slack_token)
 
-            if 'error' in dm_response or update_response.status_code != 200:
-                return jsonify({"status": "error", "message": "Failed to update the home UI or send DM."}), 500
-            return jsonify({"status": "ok"})
+            # if 'error' in dm_response or update_response.status_code != 200:
+            #     return jsonify({"status": "error", "message": "Failed to update the home UI or send DM."}), 500
+            # return jsonify({"status": "ok"})
             update_modal_view = {
                 "type": "modal",
                 "callback_id": "apply_leave_modal",

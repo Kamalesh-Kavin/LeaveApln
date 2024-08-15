@@ -1,2 +1,4 @@
 instance/
 venv/
+.env
+app/leavebot.db
