@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from .intern import apply_leave, cancel_leave_request, view_past_leaves, view_leave_balance, view_pending_leaves, view_pending_leaves_ui
-from .manager import approve_or_decline_leave, view_intern_leave_history, view_all_pending_leaves, view_all_pending_leaves_ui, handle_interactive_message
+from .manager import approve_or_decline_leave, view_intern_leave_history, view_all_pending_leaves, view_all_pending_leaves_ui, format_intern_users_for_modal, fetch_intern_users, handle_interactive_message
 from .models import User
 import json
 import requests
@@ -366,6 +366,97 @@ def handle_interactions():
         else:
             return 'User'
     
+    def open_intern_leave_history_modal(trigger_id):
+        modal_view = {
+            "type": "modal",
+            "callback_id": "intern_leave_history_request",
+            "title": {
+                "type": "plain_text",
+                "text": "Leave History"
+            },
+            "blocks": [
+                {
+                    "type": "input",
+                    "block_id": "slack_id_block",
+                    "label": {
+                        "type": "plain_text",
+                        "text": "Enter Slack ID (Optional)"
+                    },
+                    "element": {
+                        "type": "plain_text_input",
+                        "action_id": "slack_id_input",
+                        "placeholder": {
+                            "type": "plain_text",
+                            "text": "e.g., U07GHFFEHDH"
+                        }
+                    },
+                    "optional": True  
+                },
+                {
+                    "type": "input",
+                    "block_id": "user_id_block",
+                    "label": {
+                        "type": "plain_text",
+                        "text": "Enter User ID (Optional)"
+                    },
+                    "element": {
+                        "type": "plain_text_input",
+                        "action_id": "user_id_input",
+                        "placeholder": {
+                            "type": "plain_text",
+                            "text": "e.g., 12345"
+                        }
+                    },
+                    "optional": True  
+                }
+            ],
+            "submit": {
+                "type": "plain_text",
+                "text": "Submit"
+            },
+            "close": {
+                "type": "plain_text",
+                "text": "Cancel"
+            }
+        }
+        response = requests.post('https://slack.com/api/views.open', headers={
+            'Authorization': f'Bearer {slack_token}',
+            'Content-Type': 'application/json'
+        }, json={
+            "trigger_id": trigger_id,
+            "view": modal_view
+        })
+        if response.status_code == 200 and response.json().get('ok'):
+            print("Modal opened successfully!")
+        else:
+            print(f"Failed to open modal: {response.text}")
+
+    def open_intern_users_modal(trigger_id):
+        intern_users = fetch_intern_users()
+        blocks = format_intern_users_for_modal(intern_users)
+        
+        response = requests.post('https://slack.com/api/views.open', headers={
+            'Authorization': f'Bearer {slack_token}',
+            'Content-Type': 'application/json'
+        }, json={
+            "trigger_id": trigger_id,
+            "view": {
+                "type": "modal",
+                "callback_id": "intern_users_modal",
+                "title": {
+                    "type": "plain_text",
+                    "text": "Intern Users"
+                },
+                "blocks": blocks
+            }
+        })
+        
+        if response.status_code == 200 and response.json().get('ok'):
+            response="ok"
+        else:
+            response="no"
+        return response
+    
     if request.content_type != 'application/x-www-form-urlencoded':
         return jsonify({"error": "Unsupported Media Type"}), 415
     payload = request.form.get('payload')
@@ -377,6 +468,7 @@ def handle_interactions():
         return jsonify({"error": "Invalid JSON in payload"}), 400
 
     action_id = data.get('actions', [{}])[0].get('action_id')
+    print("ACTIONSSSS:",action_id)
     leave_id = data.get('actions', [{}])[0].get('value')
     user_id = data.get('user', {}).get('id')
     if data.get('type') == 'view_submission':
@@ -431,6 +523,16 @@ def handle_interactions():
                 return jsonify({"status": "error", "message": response.text}), response.status_code
 
             return jsonify({"status": "ok"})
+    if action_id == 'view_user_leave_history':
+        trigger_id = data.get('trigger_id')
+        open_intern_leave_history_modal(trigger_id)
+    if action_id == "view_users":
+        trigger_id = data.get('trigger_id')
+        response=open_intern_users_modal(trigger_id)
+        if response=="ok":
+            return jsonify({"status": "ok"})
+        else:
+            return jsonify({"status": "error", "message": "Failed to fetch user details"}), 500
     if action_id in ["apporve","decline"]:
         response = handle_interactive_message(data)
         update_response = update_home_manager_ui(user_id, slack_token)
@@ -584,152 +686,6 @@ def handle_interactions():
             return jsonify({"status": "error", "message": "Failed to update the home UI or send DM."}), 500
         
         return jsonify({"status": "ok", "message": response_message})
-
-# @bp.route('/slack/interactions', methods=['POST'])
-# def handle_interactions():
-#     if request.content_type != 'application/x-www-form-urlencoded':
-#         return jsonify(error="Unsupported Media Type"), 415
-#     payload = request.form.get('payload')
-#     if not payload:
-#         return jsonify(error="No payload found"), 400
-#     try:
-#         data = json.loads(payload)
-#     except json.JSONDecodeError:
-#         return jsonify(error="Invalid JSON in payload"), 400
-#     action_id = data.get('actions', [{}])[0].get('action_id')
-#     user_id = data.get('user', {}).get('id')
-#     print("ACTIONNNN: ",action_id)
-#     if action_id == 'apply_leave':
-#         blocks = [
-#             {
-#                 "type": "section",
-#                 "text": {
-#                     "type": "mrkdwn",
-#                     "text": "Please fill out the leave application form."
-#                 }
-#             },
-#             {
-#                 "type": "input",
-#                 "block_id": "start_date",
-#                 "element": {
-#                     "type": "datepicker",
-#                     "placeholder": {
-#                         "type": "plain_text",
-#                         "text": "Select a start date"
-#                     },
-#                     "action_id": "start_date"
-#                 },
-#                 "label": {
-#                     "type": "plain_text",
-#                     "text": "Start Date"
-#                 }
-#             },
-#             {
-#                 "type": "input",
-#                 "block_id": "end_date",
-#                 "element": {
-#                     "type": "datepicker",
-#                     "placeholder": {
-#                         "type": "plain_text",
-#                         "text": "Select an end date"
-#                     },
-#                     "action_id": "end_date"
-#                 },
-#                 "label": {
-#                     "type": "plain_text",
-#                     "text": "End Date"
-#                 }
-#             },
-#             {
-#                 "type": "input",
-#                 "block_id": "reason",
-#                 "element": {
-#                     "type": "plain_text_input",
-#                     "multiline": True,
-#                     "action_id": "reason"
-#                 },
-#                 "label": {
-#                     "type": "plain_text",
-#                     "text": "Reason for leave"
-#                 }
-#             },
-#             {
-#                 "type": "actions",
-#                 "elements": [
-#                     {
-#                         "type": "button",
-#                         "text": {
-#                             "type": "plain_text",
-#                             "text": "Submit",
-#                             "emoji": True
-#                         },
-#                         "style": "primary",
-#                         "action_id": "submit_leave"
-#                     }
-#                 ]
-#             }
-#         ]
-#         response = {
-#             "response_type": "ephemeral",
-#             "blocks": blocks
-#         }
-
-#         return jsonify(response)
-
-#     elif action_id == 'view_leave_history':
-#         # Respond with leave history
-#         leave_history_blocks = [
-#             {
-#                 "type": "section",
-#                 "text": {
-#                     "type": "mrkdwn",
-#                     "text": "Here is your leave history:"
-#                 }
-#             }
-#             # Add more blocks here for displaying leave history
-#         ]
-
-#         response = {
-#             "response_type": "ephemeral",
-#             "blocks": leave_history_blocks
-#         }
-
-#         return jsonify(response)
-
-#     return jsonify({"status": "error", "message": "Unknown action"}), 400
-
-# @bp.route('/slack/interactions', methods=['POST'])
-# def handle_interactions():
-#     print("HIII")
-#     print(request.content_type)
-#     if request.content_type != 'application/x-www-form-urlencoded':
-#         return jsonify(error="Unsupported Media Type"), 415
-#     payload = request.form.get('payload')
-    
-#     if not payload:
-#         return jsonify(error="No payload found"), 400
-
-#     try:
-#         # Parse the payload JSON string
-#         data = json.loads(payload)
-#     except json.JSONDecodeError:
-#         return jsonify(error="Invalid JSON in payload"), 400
-
-#     action_id = data.get('actions', [{}])[0].get('action_id')
-#     leave_id = data.get('actions', [{}])[0].get('value')
-#     user_id = data.get('user', {}).get('id')
-
-#     print(f"Action ID: {action_id}, Leave ID: {leave_id}, User ID: {user_id}")
-
-#     response = handle_interactive_message(data)
-#     # if action_id == 'approve':
-#     #     response = approve_or_decline_leave(user_id, int(leave_id), 'approve')
-#     # elif action_id == 'decline':
-#     #     response = approve_or_decline_leave(user_id, int(leave_id), 'decline')
-#     # else:
-#     #     response = "Unknown action."
-    
-#     return jsonify(response_type='ephemeral', text=response)
 
 @bp.route('/slack/leave', methods=['POST'])
 def handle_leave():

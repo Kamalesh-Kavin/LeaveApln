@@ -3,6 +3,35 @@ from .slack_bot import send_message_from_manager, update_message
 
 from app.models import db, User, LeaveRequest
 
+def fetch_intern_users():
+    intern_users = User.query.filter_by(role='Intern').all()  # Modify this query based on your data model
+    return intern_users
+
+def format_intern_users_for_modal(intern_users):
+    blocks = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "*List of Intern Users:*"
+            }
+        },
+        {"type": "divider"}
+    ]
+    for user in intern_users:
+        blocks.append({
+            "type": "section",
+            "block_id": f"user_{user.id}",
+            "text": {
+                "type": "mrkdwn",
+                "text": (f"*Slack ID:* {user.slack_id}\n"
+                         f"*User Name:* {user.name}\n"
+                         f"*User ID:* {user.id}\n"
+                         f"*No. of leaves remaining:* {user.leave_balance}")
+            }
+        })
+    return blocks
+
 def create_manager(slack_id, name):
     try:
         user = User.query.filter_by(slack_id=slack_id).first()
@@ -117,7 +146,6 @@ def approve_or_decline_leave(user_id, leave_id, action):
     except Exception as e:
         return f"An error occurred: {e}"
 
-
 def view_intern_leave_history(intern_name):
     intern = User.query.filter(User.name.ilike(f"%{intern_name}%"), User.role == 'Intern').first()
     if not intern:
@@ -127,7 +155,6 @@ def view_intern_leave_history(intern_name):
         return f"No leave history found for {intern.name}."
     leave_history = [f"Leave ID: {lr.id} - From {lr.start_date} to {lr.end_date}: {lr.status}" for lr in leave_requests]
     return "\n".join(leave_history)
-
 
 def handle_interactive_message(payload):
     try:
