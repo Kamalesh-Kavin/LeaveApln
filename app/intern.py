@@ -68,85 +68,43 @@ def apply_leave(user_id, start_date, end_date, reason, user_name):
     except Exception as e:
         return f"An error occurred: {e}"
 
-def view_pending_leaves_ui(user_id, page=1, per_page=5):
+def view_pending_leaves_ui(user_id):
     user = User.query.filter_by(slack_id=user_id).first()
     if not user:
         return []
 
-    # Calculate total pending leaves for pagination
-    total_pending_leaves = LeaveRequest.query.filter_by(user_id=user.id, status='PENDING').count()
-    
-    # Fetch only the leaves for the current page
-    pending_leaves = LeaveRequest.query.filter_by(user_id=user.id, status='PENDING')\
-                                        .order_by(LeaveRequest.start_date)\
-                                        .offset((page - 1) * per_page)\
-                                        .limit(per_page)\
-                                        .all()
-    
-    leave_blocks = []
-
+    pending_leaves = LeaveRequest.query.filter_by(user_id=user.id, status='PENDING').all()
     if not pending_leaves:
+        return [
+            {
+                "type": "section",
+                "block_id": "no_pending_leaves",
+                "text": {
+                    "type": "plain_text",
+                    "text": "You have no pending leave requests."
+                }
+            }
+        ]
+
+    leave_blocks = []
+    for leave in pending_leaves:
         leave_blocks.append({
             "type": "section",
-            "block_id": "no_pending_leaves",
+            "block_id": f"pending_leave_{leave.id}",
             "text": {
-                "type": "plain_text",
-                "text": "You have no pending leave requests."
+                "type": "mrkdwn",
+                "text": f"*Leave ID:* {leave.id}\n*From:* {leave.start_date}\n*To:* {leave.end_date}\n*Reason:* {leave.reason}"
+            },
+            "accessory": {
+                "type": "button",
+                "text": {
+                    "type": "plain_text",
+                    "text": "Cancel"
+                },
+                "action_id": f"cancel_{leave.id}",
+                "style": "danger"
             }
         })
-    else:
-        for leave in pending_leaves:
-            leave_blocks.append({
-                "type": "section",
-                "block_id": f"pending_leave_{leave.id}",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"*Leave ID:* {leave.id}\n*From:* {leave.start_date}\n*To:* {leave.end_date}\n*Reason:* {leave.reason}"
-                },
-                "accessory": {
-                    "type": "button",
-                    "text": {
-                        "type": "plain_text",
-                        "text": "Cancel"
-                    },
-                    "action_id": f"cancel_{leave.id}",
-                    "style": "danger"
-                }
-            })
-
-        # Add pagination buttons if needed
-        if page > 1:
-            leave_blocks.append({
-                "type": "actions",
-                "elements": [
-                    {
-                        "type": "button",
-                        "text": {
-                            "type": "plain_text",
-                            "text": "Previous"
-                        },
-                        "action_id": f"prev_page_{page-1}",
-                        "value": str(page-1)
-                    }
-                ]
-            })
-
-        if page * per_page < total_pending_leaves:
-            leave_blocks.append({
-                "type": "actions",
-                "elements": [
-                    {
-                        "type": "button",
-                        "text": {
-                            "type": "plain_text",
-                            "text": "Next"
-                        },
-                        "action_id": f"next_page_{page+1}",
-                        "value": str(page+1)
-                    }
-                ]
-            })
-
     return leave_blocks
 
 def view_pending_leaves(user_id):

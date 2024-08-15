@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from .intern import apply_leave, cancel_leave_request, view_past_leaves, view_leave_balance, view_pending_leaves, view_pending_leaves_ui
-from .manager import approve_or_decline_leave, view_intern_leave_history, view_all_pending_leaves, handle_interactive_message
+from .manager import approve_or_decline_leave, view_intern_leave_history, view_all_pending_leaves, view_all_pending_leaves_ui, handle_interactive_message
 from .models import User
 import json
 import requests
@@ -21,22 +21,23 @@ def app_home():
     # to enable link
     # if request.json.get('type') == 'url_verification':
     #     return jsonify(challenge=request.json.get('challenge'))
-
     print("HOME UI Loading...")
     data = request.json
-    print()
-    print(data)
+    print("DATA: ",data)
+
     user_id = data.get('event', {}).get('user') or data.get('event', {}).get('message', {}).get('user') or data.get('event', {}).get('edited', {}).get('user')
-    print(user_id)
+    print("\nUser id: ",user_id)
     if not user_id:
         return jsonify({"status": "error", "message": "User ID not found"}), 400
+    
     user = User.query.filter_by(slack_id=user_id).first()
-    print()
-    print(user)
+    print("User: ",user)
     if not user:
         return jsonify({"status": "error", "message": "User not found"}), 404
-    print("hi")
+    
     is_intern = user.role == 'Intern'
+    is_manager = user.role == 'Manager'
+
     blocks = [
         {
             "type": "section",
@@ -47,8 +48,11 @@ def app_home():
         },
         {
             "type": "divider"
-        },
-        {
+        }
+    ]
+
+    if is_intern:
+        blocks.append({
             "type": "actions",
             "elements": [
                 {
@@ -59,7 +63,7 @@ def app_home():
                         "emoji": True
                     },
                     "action_id": "apply_leave",
-                    "style": "primary"  # Green button
+                    "style": "primary"
                 },
                 {
                     "type": "button",
@@ -71,9 +75,7 @@ def app_home():
                     "action_id": "view_leave_history"
                 }
             ]
-        }
-    ]
-    if is_intern:
+        })
         pending_leaves_blocks = view_pending_leaves_ui(user_id)
         blocks.append({
             "type": "section",
@@ -85,7 +87,43 @@ def app_home():
         })
         blocks.extend(pending_leaves_blocks)
 
-    # Send the updated home view to Slack
+    elif is_manager:
+        blocks.append({
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "View Users",
+                        "emoji": True
+                    },
+                    "action_id": "view_users",
+                    "style": "primary"
+                },
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "View User Leave History",
+                        "emoji": True
+                    },
+                    "action_id": "view_user_leave_history"
+                }
+            ]
+        })
+        pending_leaves = view_all_pending_leaves_ui()
+        if pending_leaves:
+            blocks.append({
+                "type": "section",
+                "block_id": "pending_leaves_header",
+                "text": {
+                    "type": "plain_text",
+                    "text": "Pending Leave Requests"
+                }
+            })
+            blocks.extend(pending_leaves)
+    
     response = requests.post(
         'https://slack.com/api/views.publish',
         headers={
@@ -100,81 +138,10 @@ def app_home():
             }
         }
     )
-    
     print(f"Slack API response: {response.status_code}, {response.text}")
     if response.status_code != 200:
         return jsonify({"status": "error", "message": response.text}), response.status_code
     return jsonify({"status": "ok"})
-
-# def app_home():
-#     print("HOME UI Loading...")
-#     data = request.json
-#     print()
-#     print(data)
-#     if 'user' in data.get('event', {}):
-#         user_id = data['event']['user']
-#     elif 'message' in data.get('event', {}):
-#         user_id = data['event']['message'].get('user', None)
-#     elif 'edited' in data.get('event', {}):
-#         user_id = data['event']['edited'].get('user', None)
-    
-#     blocks = [
-#         {
-#             "type": "section",
-#             "text": {
-#                 "type": "mrkdwn",
-#                 "text": "Hello, How can I help you today?"
-#             }
-#         },
-#         {
-#             "type": "divider"
-#         },
-#         {
-#             "type": "actions",
-#             "elements": [
-#                 {
-#                     "type": "button",
-#                     "text": {
-#                         "type": "plain_text",
-#                         "text": "Apply leave",
-#                         "emoji": True
-#                     },
-#                     "action_id": "apply_leave",
-#                     "style": "primary"  
-#                 },
-#                 {
-#                     "type": "button",
-#                     "text": {
-#                         "type": "plain_text",
-#                         "text": "View leave history",
-#                         "emoji": True
-#                     },
-#                     "action_id": "view_leave_history"
-#                 }
-#             ]
-#         }
-#     ]
-    
-#     # Send the updated home view to Slack
-#     response = requests.post(
-#         'https://slack.com/api/views.publish',
-#         headers={
-#             'Authorization': f'Bearer {slack_token}',
-#             'Content-Type': 'application/json'
-#         },
-#         json={
-#             'user_id': user_id,
-#             'view': {
-#                 'type': 'home',
-#                 'blocks': blocks
-#             }
-#         }
-#     )
-    
-#     print(f"Slack API response: {response.status_code}, {response.text}")
-#     if response.status_code != 200:
-#         return jsonify({"status": "error", "message": response.text}), response.status_code
-#     return jsonify({"status": "ok"})
 
 @bp.route('/slack/interactions', methods=['POST'])
 def handle_interactions():
@@ -288,6 +255,73 @@ def handle_interactions():
         ]
         return default_home_ui
     
+    def default_home_manager_ui():
+        blocks = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "Hello, How can I help you today?"
+            }
+        },
+        {
+            "type": "divider"
+        }
+        ]
+        blocks.append({
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "View Users",
+                        "emoji": True
+                    },
+                    "action_id": "view_users",
+                    "style": "primary"
+                },
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "View User Leave History",
+                        "emoji": True
+                    },
+                    "action_id": "view_user_leave_history"
+                }
+            ]
+        })
+        return blocks
+    
+    def update_home_manager_ui(user_id, slack_token):
+        existing_blocks = default_home_ui().copy()
+        existing_blocks.append({
+            "type": "section",
+            "block_id": "pending_leaves_header",
+            "text": {
+                "type": "plain_text",
+                "text": "Pending Leaves"
+            }
+        })
+        pending_leaves_blocks = view_all_pending_leaves_ui()
+        updated_blocks = existing_blocks + pending_leaves_blocks 
+        response = requests.post(
+            'https://slack.com/api/views.publish',
+            headers={
+                'Authorization': f'Bearer {slack_token}',
+                'Content-Type': 'application/json'
+            },
+            json={
+                'user_id': user_id,
+                'view': {
+                    'type': 'home',
+                    'blocks': updated_blocks
+                }
+            }
+        )
+        return response
+    
     def update_home_ui(user_id, slack_token):
         existing_blocks = default_home_ui().copy()
         existing_blocks.append({
@@ -331,7 +365,7 @@ def handle_interactions():
             return user_info.get('user', {}).get('real_name', 'User')
         else:
             return 'User'
-    print("HELLLLLOOOO")   
+    
     if request.content_type != 'application/x-www-form-urlencoded':
         return jsonify({"error": "Unsupported Media Type"}), 415
     payload = request.form.get('payload')
@@ -345,8 +379,6 @@ def handle_interactions():
     action_id = data.get('actions', [{}])[0].get('action_id')
     leave_id = data.get('actions', [{}])[0].get('value')
     user_id = data.get('user', {}).get('id')
-    print("ACTIONNNS: ",action_id)
-    print()
     if data.get('type') == 'view_submission':
         callback_id = data.get('view', {}).get('callback_id')
         values = data.get('view', {}).get('state', {}).get('values', {})
@@ -400,9 +432,15 @@ def handle_interactions():
 
             return jsonify({"status": "ok"})
     if action_id in ["apporve","decline"]:
-        response = handle_interactive_message(data)
-        if response.status_code != 200:
-                return jsonify({"status": "error", "message": response.text}), response.status_code
+        container_type = data['container']['type']
+        if container_type=="message":
+            response = handle_interactive_message(data)
+        else:
+            response=approve_or_decline_leave(user_id,leave_id,action_id)
+        update_response = update_home_ui(user_id, slack_token)
+        print(response)
+        if "error" in response or update_response.status_code != 200:
+                return jsonify({"status": "error", "message": "Failed to update the home UI or send DM."}), 500
         return jsonify({"status": "ok"})
     if action_id == 'apply_leave': 
         trigger_id = data.get('trigger_id')  

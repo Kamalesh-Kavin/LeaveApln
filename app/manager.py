@@ -16,6 +16,67 @@ def create_manager(slack_id, name):
     
     except Exception as e:
         return f"An error occurred: {e}"
+    
+def view_all_pending_leaves_ui():
+    pending_leaves = LeaveRequest.query.filter_by(status=LeaveStatus.PENDING).all()
+
+    if not pending_leaves:
+        return [{
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "No pending leave requests found."
+            }
+        }]
+    
+    blocks = []
+    for leave in pending_leaves:
+        user = User.query.get(leave.user_id)
+        leave_id = leave.id
+        user_name = user.name
+        start_date = leave.start_date.strftime('%Y-%m-%d')
+        end_date = leave.end_date.strftime('%Y-%m-%d')
+        reason = leave.reason
+        
+        # Section block with leave details
+        blocks.append({
+            "type": "section",
+            "block_id": f"pending_leave_{leave_id}",
+            "text": {
+                "type": "mrkdwn",
+                "text": (f"*User:* {user_name}\n"
+                         f"*Start Date:* {start_date}\n"
+                         f"*End Date:* {end_date}\n"
+                         f"*Reason:* {reason}")
+            }
+        })
+
+        # Actions block with approve and decline buttons
+        blocks.append({
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "Approve"
+                    },
+                    "action_id": "approve",
+                    "value": str(leave_id)
+                },
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "Decline"
+                    },
+                    "action_id": "decline",
+                    "value": str(leave_id)
+                }
+            ]
+        })
+    
+    return blocks
 
 def view_all_pending_leaves():
     pending_leaves = LeaveRequest.query.filter_by(status=LeaveStatus.PENDING).all()

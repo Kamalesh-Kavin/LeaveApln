@@ -27,8 +27,8 @@ def update_message(channel_id, message_ts, updated_text, updated_blocks):
         if not response.ok or not response.json().get('ok', False):
             raise Exception(f"Slack API Error: {response.json().get('error')}")
 
-        print(f"Message updated successfully: {response.json()}")
-        return response.json()
+        print(f"Message updated successfully: {response.text}")
+        return response.text
 
     except Exception as e:
         print(f"Error updating message: {e}")
