@@ -295,13 +295,13 @@ def handle_interactions():
         return blocks
     
     def update_home_manager_ui(user_id, slack_token):
-        existing_blocks = default_home_ui().copy()
+        existing_blocks = default_home_manager_ui().copy()
         existing_blocks.append({
             "type": "section",
             "block_id": "pending_leaves_header",
             "text": {
                 "type": "plain_text",
-                "text": "Pending Leaves"
+                "text": "Pending Leave Requests"
             }
         })
         pending_leaves_blocks = view_all_pending_leaves_ui()
@@ -432,12 +432,8 @@ def handle_interactions():
 
             return jsonify({"status": "ok"})
     if action_id in ["apporve","decline"]:
-        container_type = data['container']['type']
-        if container_type=="message":
-            response = handle_interactive_message(data)
-        else:
-            response=approve_or_decline_leave(user_id,leave_id,action_id)
-        update_response = update_home_ui(user_id, slack_token)
+        response = handle_interactive_message(data)
+        update_response = update_home_manager_ui(user_id, slack_token)
         print(response)
         if "error" in response or update_response.status_code != 200:
                 return jsonify({"status": "error", "message": "Failed to update the home UI or send DM."}), 500

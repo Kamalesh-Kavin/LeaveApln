@@ -5,6 +5,7 @@ import os
 import json
 from slack_sdk.errors import SlackApiError
 from dotenv import load_dotenv
+from .models import LeaveRequest,db
 
 load_dotenv(dotenv_path='../.env')
 slack_token = os.getenv("SLACK_BOT_TOKEN")
@@ -64,7 +65,7 @@ def send_message_to_manager(slack_id, leave_id, message):
                             "emoji": True
                         },
                         "action_id": "approve",
-                        "value": str(leave_id)  # Use leave_id as value
+                        "value": str(leave_id) 
                     },
                     {
                         "type": "button",
@@ -74,7 +75,7 @@ def send_message_to_manager(slack_id, leave_id, message):
                             "emoji": True
                         },
                         "action_id": "decline",
-                        "value": str(leave_id)  # Use leave_id as value
+                        "value": str(leave_id) 
                     }
                 ]
             }
@@ -89,7 +90,14 @@ def send_message_to_manager(slack_id, leave_id, message):
         if not response_data.get("ok"):
             raise Exception(f"Slack API Error: {response_data.get('error')}")
         
+        channel_id = response_data.get('channel')
+        message_ts = response_data.get('ts')
         print(f"Message sent to manager successfully: {response_data}")
+        leave_request = LeaveRequest.query.get(leave_id)
+        if leave_request:
+            leave_request.channel_id = channel_id
+            leave_request.message_ts = message_ts
+            db.session.commit()
         return response_data
 
     except requests.exceptions.RequestException as e:

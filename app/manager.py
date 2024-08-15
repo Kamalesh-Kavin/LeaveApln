@@ -1,7 +1,7 @@
 from .models import db, User, LeaveRequest, LeaveStatus
 from .slack_bot import send_message_from_manager, update_message
 
-from app.models import db, User
+from app.models import db, User, LeaveRequest
 
 def create_manager(slack_id, name):
     try:
@@ -25,7 +25,7 @@ def view_all_pending_leaves_ui():
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "No pending leave requests found."
+                "text": "No long pending leave requests found."
             }
         }]
     
@@ -138,12 +138,16 @@ def handle_interactive_message(payload):
         action_id = action.get('action_id')
         print(action_id)
         value = action.get('value')
-        channel_id = payload['channel']['id']
-        message_ts = payload['message']['ts']
+        leave_id = int(value)
+        print(leave_id)
+        channel_id = payload.get('channel', {}).get('id')
+        message_ts = payload.get('message', {}).get('ts')
+        if not channel_id or not message_ts:
+            leave_request = LeaveRequest.query.filter_by(id=leave_id).one()
+            channel_id = leave_request.channel_id
+            message_ts = leave_request.message_ts
         print(channel_id, message_ts)
         if action_id in ['approve', 'decline']:
-            leave_id = int(value)
-            print(leave_id)
             action_type = 'approve' if action_id == 'approve' else 'decline'
             # Call the function to approve or decline
             response = approve_or_decline_leave(payload['user']['id'], leave_id, action_type)
