@@ -9,6 +9,23 @@ import os
 bp = Blueprint('routes', __name__)
 slack_token = os.getenv("SLACK_BOT_TOKEN")
 
+def get_slack_user_info(user_id):
+    url = f"https://slack.com/api/users.info"
+    headers = {
+        'Authorization': f'Bearer {slack_token}',
+        'Content-Type': 'application/json'
+    }
+    params = {
+        'user': user_id
+    }
+    response = requests.get(url, headers=headers, params=params)
+    data = response.json()
+    
+    if data.get('ok'):
+        return data.get('user', {})
+    else:
+        return None
+    
 @bp.route('/')
 def home():
     return "Welcome to the Leave Bot Application!!"
@@ -30,11 +47,14 @@ def app_home():
     user = User.query.filter_by(slack_id=user_id).first()
     print("User: ",user)
     if not user:
-        return jsonify({"status": "error", "message": "User not found"}), 404
-    
+        slack_user_info = get_slack_user_info(user_id)
+        user_name = slack_user_info.get('profile', {}).get('real_name', 'Unknown')
+        user = User(slack_id=user_id, name=user_name)
+        db.session.add(user)
+        db.session.commit()
+
     is_intern = user.role == 'Intern'
     is_manager = user.role == 'Manager'
-
     blocks = [
         {
             "type": "section",

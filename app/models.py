@@ -19,7 +19,7 @@ class User(db.Model):
     role = db.Column(db.String(20), nullable=False, default='Intern')  
     leave_balance = db.Column(db.Integer, default=2)  
     last_reset_month = db.Column(db.String(7), nullable=False, default='')  
-    manager_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    manager_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True,default=1)
 
     # Relationship to track leave requests made by this user
     leave_requests = relationship("LeaveRequest", back_populates="user", foreign_keys="[LeaveRequest.user_id]")
