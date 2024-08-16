@@ -11,6 +11,34 @@ load_dotenv(dotenv_path='../.env')
 slack_token = os.getenv("SLACK_BOT_TOKEN")
 client = WebClient(token=slack_token)
 
+def update_message_for_manager(channel_id, message_ts, user_name):
+    slack_token = os.getenv("SLACK_BOT_TOKEN")
+    headers = {
+        'Authorization': f'Bearer {slack_token}',
+        'Content-Type': 'application/json'
+    }
+    
+    updated_message = {
+        "channel": channel_id,
+        "ts": message_ts,
+        "text": f"This leave request was cancelled by {user_name}.",
+        "attachments": [
+            {
+                "fallback": "Leave request update",
+                "color": "#ff0000",
+                "title": "Leave Request Update",
+                "text": f"This leave request was cancelled by {user_name}."
+            }
+        ]
+    }
+
+    response = requests.post('https://slack.com/api/chat.update', headers=headers, json=updated_message)
+    
+    if not response.ok:
+        raise Exception(f"Failed to update message: {response.text}")
+
+    return response
+
 def update_message(channel_id, message_ts, updated_text, updated_blocks):
     try:
         url = "https://slack.com/api/chat.update"

@@ -1,5 +1,5 @@
 from .models import db, User, LeaveRequest, LeaveStatus
-from .slack_bot import send_message_to_manager
+from .slack_bot import send_message_to_manager, update_message_for_manager
 from datetime import datetime, timedelta
 
 def apply_leave(user_id, start_date, end_date, reason, user_name):
@@ -122,6 +122,7 @@ def view_pending_leaves(user_id):
     response += "Please use the corresponding Leave ID to cancel a leave request."
     return response
 
+
 def cancel_leave_request(user_id, leave_id):
     try:
         user = User.query.filter_by(slack_id=user_id).first()
@@ -132,11 +133,16 @@ def cancel_leave_request(user_id, leave_id):
         if leave_request is None:
             return "Leave request not found or not in pending status."
 
+        if leave_request.status == LeaveStatus.CANCELLED:
+            return {"error": "Leave request is already cancelled."}
+    
         leave_days = (leave_request.end_date - leave_request.start_date).days + 1
         user.leave_balance += leave_days
         leave_request.status = LeaveStatus.CANCELLED
         db.session.commit()
-        
+
+        if leave_request.channel_id and leave_request.message_ts:
+            update_message_for_manager(leave_request.channel_id, leave_request.message_ts, user.name)
         return f"Leave request (ID: {leave_id}) cancelled successfully. Leave days added back to your balance."
 
     except Exception as e:
