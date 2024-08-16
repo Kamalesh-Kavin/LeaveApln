@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from .intern import apply_leave, cancel_leave_request, view_past_leaves, view_leave_balance, view_pending_leaves, view_pending_leaves_ui
-from .manager import approve_or_decline_leave, view_intern_leave_history, view_all_pending_leaves, view_all_pending_leaves_ui, format_intern_users_for_modal, fetch_intern_users, handle_interactive_message
-from .models import User
+from .manager import approve_or_decline_leave, view_intern_leave_history, view_all_pending_leaves, view_all_pending_leaves_ui, format_intern_users_for_modal, fetch_intern_users, handle_interactive_message, assign_manager_to_user
+from .models import User,db
 import json
 import requests
 import os
@@ -109,7 +109,7 @@ def app_home():
                 }
             ]
         })
-        pending_leaves = view_all_pending_leaves_ui()
+        pending_leaves = view_all_pending_leaves_ui(user.id)
         if pending_leaves:
             blocks.append({
                 "type": "section",
@@ -416,15 +416,16 @@ def handle_interactions():
                 return jsonify({"status": "error", "message": response.text}), response.status_code
             return jsonify({"status": "ok"})
         if callback_id == 'intern_leave_history_request':
-            print("i am here\n",data)
+            print("Data: ",data)
             slack_id = values.get('slack_id_block', {}).get('slack_id_input', {}).get('value')
             user_input_id = values.get('user_id_block', {}).get('user_id_input', {}).get('value')
+            manager = User.query.filter_by(slack_id=user_id).first()
             if slack_id:
                 user=User.query.filter_by(slack_id=slack_id).first()
                 user_identifier=user.id
             else:
                 user_identifier=user_input_id
-            leave_history = view_intern_leave_history(user_identifier)
+            leave_history = view_intern_leave_history(user_identifier,manager.id)
             leave_history_message = f"Leave History for {user_identifier}:\n\n" + leave_history
 
             # Update the modal with the leave history
@@ -690,6 +691,40 @@ def handle_interactions():
         
         return jsonify({"status": "ok", "message": response_message})
 
+@bp.route('/slack/admin',methods=['POST'])
+def admin_stuffs():
+    data = request.form
+    user_id = data.get('user_id')
+    user_name = data.get('user_name')
+    command = data.get('command')
+    text = data.get('text', '').strip()
+    if command == '/viewmanagers':
+        managers = User.query.filter_by(role='Manager').with_entities(User.id.label('manager_id'), User.name, User.slack_id).all()
+        print("MAN",managers)
+        manager_list = [f"Manager ID: {manager[0]} - Name: {manager[1]} - Slack ID: {manager[2]}" for manager in managers]
+        return "\n".join(manager_list)
+    
+    elif command == '/assignmanager':
+        try:
+            texts=text.split()
+            intern_id=int(texts[0])
+            manager_id=int(texts[1])
+            intern = User.query.filter_by(id=intern_id).first()
+            manager = User.query.filter_by(id=manager_id).first()
+            if not intern:
+                return f"Intern with ID {intern_id} not found."
+            if not manager:
+                return f"Manager with ID {manager_id} not found."
+            if manager.role != 'Manager':
+                return f"User with ID {manager_id} is not a manager."
+            intern.manager_id = manager.id
+            db.session.commit()
+            return f"Manager {manager.name} (ID: {manager.id}) successfully assigned to Intern {intern.name} (ID: {intern.id})."
+
+        except Exception as e:
+            db.session.rollback() 
+            return f"An error occurred while assigning manager: {e}"
+        
 @bp.route('/slack/leave', methods=['POST'])
 def handle_leave():
     data = request.form
@@ -704,7 +739,6 @@ def handle_leave():
     
     if command == '/applyleave':
         try:
-            
             start_date, end_date, reason = text.split(" ", 2)
             response = apply_leave(user_id, start_date, end_date, reason, user_name)
         except ValueError:

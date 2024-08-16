@@ -46,9 +46,11 @@ def create_manager(slack_id, name):
     except Exception as e:
         return f"An error occurred: {e}"
     
-def view_all_pending_leaves_ui():
-    pending_leaves = LeaveRequest.query.filter_by(status=LeaveStatus.PENDING).all()
-
+def view_all_pending_leaves_ui(manager_id):
+    pending_leaves = LeaveRequest.query.filter_by(
+            status=LeaveStatus.PENDING,
+            manager_id=manager_id
+        ).all()
     if not pending_leaves:
         return [{
             "type": "section",
@@ -146,13 +148,40 @@ def approve_or_decline_leave(user_id, leave_id, action):
     except Exception as e:
         return f"An error occurred: {e}"
 
-def view_intern_leave_history(user_id):
-    intern = User.query.filter_by(id=user_id).first()
+def assign_manager_to_user(intern_id, manager_id):
+    try:
+        intern = User.query.filter_by(id=intern_id).first()
+        manager = User.query.filter_by(id=manager_id).first()
+        if not intern:
+            return f"Intern with ID {intern_id} not found."
+        if not manager:
+            return f"Manager with ID {manager_id} not found."
+
+        if manager.role != 'Manager':
+            return f"User with ID {manager_id} is not a manager."
+
+        intern.manager_id = manager.id
+        db.session.commit()
+
+        return f"Manager {manager.name} (ID: {manager.id}) successfully assigned to Intern {intern.name} (ID: {intern.id})."
+
+    except Exception as e:
+        db.session.rollback()  # Rollback the transaction in case of error
+        return f"An error occurred while assigning manager: {e}"
+    
+def view_intern_leave_history(intern_id,manager_id):
+    manager = User.query.filter_by(id=manager_id).first()
+    if not manager:
+        return "Manager not found."
+
+    intern = User.query.filter_by(id=intern_id, manager_id=manager_id).first()
     if not intern:
-        return "Intern not found."
+        return "Intern not found or you do not have permission to view this intern's leave history."
+
     leave_requests = LeaveRequest.query.filter_by(user_id=intern.id).all()
     if not leave_requests:
         return f"No leave history found for {intern.name}."
+
     leave_history = [f"Leave ID: {lr.id} - From {lr.start_date} to {lr.end_date}: {lr.status}" for lr in leave_requests]
     return "\n".join(leave_history)
 

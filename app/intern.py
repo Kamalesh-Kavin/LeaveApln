@@ -39,17 +39,20 @@ def apply_leave(user_id, start_date, end_date, reason, user_name):
         if total_leave_days_this_month + leave_days > 2:
             return "Leave limit exceeded. You can only take a maximum of 2 days leave per month."
 
-        leave_request = LeaveRequest(user_id=user.id, start_date=start_date, end_date=end_date, reason=reason)
+        manager = User.query.filter_by(id=user.manager_id).first()
+        if user.manager_id and not manager:
+            return "Manager not found."
+
+        leave_request = LeaveRequest(
+            user_id=user.id,
+            start_date=start_date,
+            end_date=end_date,
+            reason=reason,
+            manager_id=user.manager_id
+        )
         db.session.add(leave_request)
         user.leave_balance -= leave_days
         db.session.commit()
-
-        #single manager concept for now
-        manager = User.query.filter_by(role='Manager').first()
-        print()
-        print("MANAGERRRR: ",manager)
-        if not manager:
-            return "Manager not found."
         try:
             print(manager.slack_id)
             send_message_to_manager(manager.slack_id, leave_request.id, f"{user.name} has applied for leave from {start_date} to {end_date}.")
