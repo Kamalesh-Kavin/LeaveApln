@@ -1,6 +1,11 @@
 from flask import Flask
 from .models import db, User
 from .manager import create_manager
+import os
+from dotenv import load_dotenv
+
+# Load the .env file
+load_dotenv(dotenv_path='../.env') 
 
 def create_app():
     app = Flask(__name__)

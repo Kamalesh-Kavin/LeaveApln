@@ -32,7 +32,6 @@ class LeaveRequest(db.Model):
     start_date = db.Column(db.Date, nullable=False)
     end_date = db.Column(db.Date, nullable=False)
     reason = db.Column(db.String(255), nullable=False)
-    request_date = db.Column(db.Date, nullable=False, default=func.now())  # Date the leave was requested
     status = Column(Enum(LeaveStatus), default=LeaveStatus.PENDING, nullable=False)
     user = relationship("User", back_populates="leave_requests")
     channel_id = db.Column(db.String(50), nullable=True)

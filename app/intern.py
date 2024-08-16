@@ -7,7 +7,7 @@ def apply_leave(user_id, start_date, end_date, reason, user_name):
         start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
         end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
         leave_days = (end_date - start_date).days + 1
-
+    
         user = User.query.filter_by(slack_id=user_id).first()
         if user is None:
             user = User(slack_id=user_id, name=user_name, role="Intern")

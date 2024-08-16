@@ -5,9 +5,6 @@ from .models import User
 import json
 import requests
 import os
-from dotenv import load_dotenv
-
-load_dotenv(dotenv_path='../.env')
 
 bp = Blueprint('routes', __name__)
 slack_token = os.getenv("SLACK_BOT_TOKEN")
@@ -184,38 +181,6 @@ def handle_interactions():
         )
         return response.text
     
-    def update_pending_leaves(user_id):
-        pending_leaves_blocks = view_pending_leaves_ui(user_id)
-        blocks = [
-            {
-                "type": "section",
-                "block_id": "pending_leaves_header",
-                "text": {
-                    "type": "plain_text",
-                    "text": "Pending Leaves"
-                }
-            }
-        ]
-        blocks.extend(pending_leaves_blocks)
-        blocks.append({"type": "divider"})
-
-        # Update the specific blocks in the home UI
-        response = requests.post(
-            'https://slack.com/api/views.publish',
-            headers={
-                'Authorization': f'Bearer {slack_token}',
-                'Content-Type': 'application/json'
-            },
-            json={
-                'user_id': user_id,
-                'view': {
-                    'type': 'home',
-                    'blocks': blocks
-                }
-            }
-        )
-        return response
-
     def default_home_ui():
         default_home_ui = [
             {
@@ -365,8 +330,141 @@ def handle_interactions():
             return user_info.get('user', {}).get('real_name', 'User')
         else:
             return 'User'
+
+    def open_intern_users_modal(trigger_id):
+        intern_users = fetch_intern_users()
+        blocks = format_intern_users_for_modal(intern_users)
+        
+        response = requests.post('https://slack.com/api/views.open', headers={
+            'Authorization': f'Bearer {slack_token}',
+            'Content-Type': 'application/json'
+        }, json={
+            "trigger_id": trigger_id,
+            "view": {
+                "type": "modal",
+                "callback_id": "intern_users_modal",
+                "title": {
+                    "type": "plain_text",
+                    "text": "Intern Users"
+                },
+                "blocks": blocks
+            }
+        })
+        
+        if response.status_code == 200 and response.json().get('ok'):
+            response="ok"
+        else:
+            response="no"
+        return response
     
-    def open_intern_leave_history_modal(trigger_id):
+    if request.content_type != 'application/x-www-form-urlencoded':
+        return jsonify({"error": "Unsupported Media Type"}), 415
+    payload = request.form.get('payload')
+    if not payload:
+        return jsonify({"error": "No payload found"}), 400
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError:
+        return jsonify({"error": "Invalid JSON in payload"}), 400
+
+    action_id = data.get('actions', [{}])[0].get('action_id')
+    print("ACTIONSSSS:",action_id)
+    leave_id = data.get('actions', [{}])[0].get('value')
+    user_id = data.get('user', {}).get('id')
+    if data.get('type') == 'view_submission':
+        callback_id = data.get('view', {}).get('callback_id')
+        values = data.get('view', {}).get('state', {}).get('values', {})
+        view_id = data.get('view', {}).get('id')
+        if callback_id == 'apply_leave_modal':
+            start_date = values.get('start_date', {}).get('start_date', {}).get('selected_date')
+            end_date = values.get('end_date', {}).get('end_date', {}).get('selected_date')
+            print("STARTTT",start_date,end_date)
+            reason = values.get('reason', {}).get('reason', {}).get('value')
+            user_name = get_user_name(user_id)
+            response_message = apply_leave(user_id, start_date, end_date, reason, user_name)
+            print(response_message)
+            update_modal_view = {
+                "type": "modal",
+                "callback_id": "apply_leave_modal",
+                "title": {
+                    "type": "plain_text",
+                    "text": "Apply for Leave"
+                },
+                "blocks": [
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": response_message
+                        }
+                    }
+                ]
+            }
+            response = requests.post(
+                'https://slack.com/api/views.update',
+                headers={
+                    'Authorization': f'Bearer {slack_token}',
+                    'Content-Type': 'application/json; charset=utf-8'
+                },
+                json={
+                    'view_id': view_id,
+                    'view': update_modal_view
+                }
+            )
+            print(f"Slack API response: {response.status_code}, {response.text}")
+            if response.status_code != 200:
+                return jsonify({"status": "error", "message": response.text}), response.status_code
+            return jsonify({"status": "ok"})
+        if callback_id == 'intern_leave_history_request':
+            print("i am here\n",data)
+            slack_id = values.get('slack_id_block', {}).get('slack_id_input', {}).get('value')
+            user_input_id = values.get('user_id_block', {}).get('user_id_input', {}).get('value')
+            if slack_id:
+                user=User.query.filter_by(slack_id=slack_id).first()
+                user_identifier=user.id
+            else:
+                user_identifier=user_input_id
+            leave_history = view_intern_leave_history(user_identifier)
+            leave_history_message = f"Leave History for {user_identifier}:\n\n" + leave_history
+
+            # Update the modal with the leave history
+            update_modal_view = {
+                "type": "modal",
+                "callback_id": "intern_leave_history_request",
+                "title": {
+                    "type": "plain_text",
+                    "text": "Leave History"
+                },
+                "blocks": [
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": leave_history_message
+                        }
+                    }
+                ]
+            }
+            
+            response = requests.post(
+                'https://slack.com/api/views.update',
+                headers={
+                    'Authorization': f'Bearer {slack_token}',
+                    'Content-Type': 'application/json; charset=utf-8'
+                },
+                json={
+                    'view_id': view_id,
+                    'view': update_modal_view
+                }
+            )
+            print(f"Slack API response: {response.status_code}, {response.text}")
+            if response.status_code != 200:
+                return jsonify({"status": "error", "message": response.text}), response.status_code
+            
+            return jsonify({"status": "ok"})
+    if action_id == 'view_user_leave_history':
+        trigger_id = data.get('trigger_id')
+        print("TRI",trigger_id)
         modal_view = {
             "type": "modal",
             "callback_id": "intern_leave_history_request",
@@ -426,106 +524,11 @@ def handle_interactions():
             "trigger_id": trigger_id,
             "view": modal_view
         })
-        if response.status_code == 200 and response.json().get('ok'):
-            print("Modal opened successfully!")
-        else:
-            print(f"Failed to open modal: {response.text}")
-
-    def open_intern_users_modal(trigger_id):
-        intern_users = fetch_intern_users()
-        blocks = format_intern_users_for_modal(intern_users)
-        
-        response = requests.post('https://slack.com/api/views.open', headers={
-            'Authorization': f'Bearer {slack_token}',
-            'Content-Type': 'application/json'
-        }, json={
-            "trigger_id": trigger_id,
-            "view": {
-                "type": "modal",
-                "callback_id": "intern_users_modal",
-                "title": {
-                    "type": "plain_text",
-                    "text": "Intern Users"
-                },
-                "blocks": blocks
-            }
-        })
-        
-        if response.status_code == 200 and response.json().get('ok'):
-            response="ok"
-        else:
-            response="no"
-        return response
-    
-    if request.content_type != 'application/x-www-form-urlencoded':
-        return jsonify({"error": "Unsupported Media Type"}), 415
-    payload = request.form.get('payload')
-    if not payload:
-        return jsonify({"error": "No payload found"}), 400
-    try:
-        data = json.loads(payload)
-    except json.JSONDecodeError:
-        return jsonify({"error": "Invalid JSON in payload"}), 400
-
-    action_id = data.get('actions', [{}])[0].get('action_id')
-    print("ACTIONSSSS:",action_id)
-    leave_id = data.get('actions', [{}])[0].get('value')
-    user_id = data.get('user', {}).get('id')
-    if data.get('type') == 'view_submission':
         callback_id = data.get('view', {}).get('callback_id')
-        values = data.get('view', {}).get('state', {}).get('values', {})
-        view_id = data.get('view', {}).get('id')
-        if callback_id == 'apply_leave_modal':
-            start_date = values.get('start_date', {}).get('start_date', {}).get('selected_date')
-            end_date = values.get('end_date', {}).get('end_date', {}).get('selected_date')
-            reason = values.get('reason', {}).get('reason', {}).get('value')
-            user_name = get_user_name(user_id)
-            response_message = apply_leave(user_id, start_date, end_date, reason, user_name)
-            print(response_message)
-            #update_response = update_home_ui(user_id, slack_token)
-
-            # if 'error' in dm_response or update_response.status_code != 200:
-            #     return jsonify({"status": "error", "message": "Failed to update the home UI or send DM."}), 500
-            # return jsonify({"status": "ok"})
-            update_modal_view = {
-                "type": "modal",
-                "callback_id": "apply_leave_modal",
-                "title": {
-                    "type": "plain_text",
-                    "text": "Apply for Leave"
-                },
-                "blocks": [
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": response_message
-                        }
-                    }
-                ]
-            }
-
-            response = requests.post(
-                'https://slack.com/api/views.update',
-                headers={
-                    'Authorization': f'Bearer {slack_token}',
-                    'Content-Type': 'application/json; charset=utf-8'
-                },
-                json={
-                    'view_id': view_id,
-                    'view': update_modal_view
-                }
-            )
-
-            print(f"Slack API response: {response.status_code}, {response.text}")
-
-            if response.status_code != 200:
-                return jsonify({"status": "error", "message": response.text}), response.status_code
-
-            return jsonify({"status": "ok"})
-    if action_id == 'view_user_leave_history':
-        trigger_id = data.get('trigger_id')
-        open_intern_leave_history_modal(trigger_id)
+        user_id = data.get('user', {}).get('id')
+        print("CALLBACK ", callback_id)
+        print(f"Slack API response: {response.status_code}, {response.text}")
+        return jsonify({"status": "ok"})
     if action_id == "view_users":
         trigger_id = data.get('trigger_id')
         response=open_intern_users_modal(trigger_id)

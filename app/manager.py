@@ -146,8 +146,8 @@ def approve_or_decline_leave(user_id, leave_id, action):
     except Exception as e:
         return f"An error occurred: {e}"
 
-def view_intern_leave_history(intern_name):
-    intern = User.query.filter(User.name.ilike(f"%{intern_name}%"), User.role == 'Intern').first()
+def view_intern_leave_history(user_id):
+    intern = User.query.filter_by(id=user_id).first()
     if not intern:
         return "Intern not found."
     leave_requests = LeaveRequest.query.filter_by(user_id=intern.id).all()
