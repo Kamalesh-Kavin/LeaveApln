@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from .intern import apply_leave, cancel_leave_request, view_past_leaves, view_leave_balance, view_pending_leaves, view_pending_leaves_ui
-from .manager import approve_or_decline_leave, view_intern_leave_history, view_all_pending_leaves, view_all_pending_leaves_ui, format_intern_users_for_modal, fetch_intern_users, handle_interactive_message, assign_manager_to_user
+from .manager import approve_or_decline_leave, view_intern_leave_history, view_all_pending_leaves, view_all_pending_leaves_ui, format_intern_users_for_modal, handle_interactive_message, make_manager
 from .models import User,db
 import json
 import requests
@@ -289,7 +289,7 @@ def handle_interactions():
                 "text": "Pending Leave Requests"
             }
         })
-        pending_leaves_blocks = view_all_pending_leaves_ui()
+        pending_leaves_blocks = view_all_pending_leaves_ui(user_id)
         updated_blocks = existing_blocks + pending_leaves_blocks 
         response = requests.post(
             'https://slack.com/api/views.publish',
@@ -351,10 +351,16 @@ def handle_interactions():
         else:
             return 'User'
 
-    def open_intern_users_modal(trigger_id):
-        intern_users = fetch_intern_users()
+    def open_intern_users_modal(trigger_id,slack_id):
+        manager = User.query.filter_by(slack_id=slack_id).first()
+        if not manager:
+            return "Manager not found."
+        manager_id = manager.id
+        intern_users = User.query.filter_by(manager_id=manager_id).all()
+        print("INTERNNN",intern_users[0].manager_id)
+        if not intern_users:
+            return "No intern users found for this manager."
         blocks = format_intern_users_for_modal(intern_users)
-        
         response = requests.post('https://slack.com/api/views.open', headers={
             'Authorization': f'Bearer {slack_token}',
             'Content-Type': 'application/json'
@@ -370,7 +376,6 @@ def handle_interactions():
                 "blocks": blocks
             }
         })
-        
         if response.status_code == 200 and response.json().get('ok'):
             response="ok"
         else:
@@ -552,7 +557,7 @@ def handle_interactions():
         return jsonify({"status": "ok"})
     if action_id == "view_users":
         trigger_id = data.get('trigger_id')
-        response=open_intern_users_modal(trigger_id)
+        response=open_intern_users_modal(trigger_id,user_id)
         if response=="ok":
             return jsonify({"status": "ok"})
         else:
@@ -560,7 +565,7 @@ def handle_interactions():
     if action_id in ["apporve","decline"]:
         response = handle_interactive_message(data)
         update_response = update_home_manager_ui(user_id, slack_token)
-        print(response)
+        print("RESS",response)
         if "error" in response or update_response.status_code != 200:
                 return jsonify({"status": "error", "message": "Failed to update the home UI or send DM."}), 500
         return jsonify({"status": "ok"})
@@ -744,6 +749,13 @@ def admin_stuffs():
         except Exception as e:
             db.session.rollback() 
             return f"An error occurred while assigning manager: {e}"
+        
+    elif command == '/makemanager':
+        try:
+            intern_id = int(text)
+            return make_manager(intern_id)
+        except ValueError:
+            return "Please provide a valid intern ID."
         
 @bp.route('/slack/leave', methods=['POST'])
 def handle_leave():
