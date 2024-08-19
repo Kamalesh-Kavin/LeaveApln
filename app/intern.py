@@ -1,4 +1,4 @@
-from .models import db, User, LeaveRequest, LeaveStatus
+from .models import db, User, LeaveRequest, LeaveStatus, ManagerMapping
 from .slack_bot import send_message_to_manager, update_message_for_manager
 from datetime import datetime, timedelta
 
@@ -25,7 +25,7 @@ def apply_leave(user_id, start_date, end_date, reason, user_name):
 
         current_month_start = datetime.now().replace(day=1)
         leaves_this_month = LeaveRequest.query.filter(
-            LeaveRequest.user_id == user.id,
+            LeaveRequest.user_id == user.slack_id,
             LeaveRequest.start_date >= current_month_start,
             LeaveRequest.end_date <= datetime.now().replace(day=1) + timedelta(days=31),
             LeaveRequest.status.notin_([LeaveStatus.CANCELLED, LeaveStatus.DECLINED])
@@ -39,23 +39,23 @@ def apply_leave(user_id, start_date, end_date, reason, user_name):
         if total_leave_days_this_month + leave_days > 2:
             return "Leave limit exceeded. You can only take a maximum of 2 days leave per month."
 
-        manager = User.query.filter_by(id=user.manager_id).first()
-        if user.manager_id and not manager:
+        manager_mapping = ManagerMapping.query.filter_by(employee_id=user.slack_id).first()
+        if not manager_mapping:
             return "Manager not found."
 
         leave_request = LeaveRequest(
-            user_id=user.id,
+            user_id=user.slack_id,
             start_date=start_date,
             end_date=end_date,
             reason=reason,
-            manager_id=user.manager_id
+            manager_id=manager_mapping.manager_id
         )
         db.session.add(leave_request)
         user.leave_balance -= leave_days
         db.session.commit()
         try:
-            print(manager.slack_id)
-            send_message_to_manager(manager.slack_id, leave_request.id, f"{user.name} has applied for leave from {start_date} to {end_date}.")
+            print(manager_mapping.manager_id)
+            send_message_to_manager(manager_mapping.manager_id, leave_request.id, f"{user.name} has applied for leave from {start_date} to {end_date}.")
             print("message sent")
         except Exception as e:
             print(f"Error sending message: {e}")
@@ -72,11 +72,26 @@ def apply_leave(user_id, start_date, end_date, reason, user_name):
         return f"An error occurred: {e}"
 
 def view_pending_leaves_ui(user_id):
+    # Fetch the user by their Slack ID
     user = User.query.filter_by(slack_id=user_id).first()
+    
+    # Check if the user exists
     if not user:
-        return []
-
-    pending_leaves = LeaveRequest.query.filter_by(user_id=user.id, status='PENDING').all()
+        return [
+            {
+                "type": "section",
+                "block_id": "no_user_found",
+                "text": {
+                    "type": "plain_text",
+                    "text": "User not found."
+                }
+            }
+        ]
+    
+    # Fetch the pending leave requests for the user
+    pending_leaves = LeaveRequest.query.filter_by(user_id=user_id, status='PENDING').all()
+    
+    # Check if there are pending leave requests
     if not pending_leaves:
         return [
             {
@@ -88,7 +103,8 @@ def view_pending_leaves_ui(user_id):
                 }
             }
         ]
-
+    
+    # Build the UI blocks for each pending leave request
     leave_blocks = []
     for leave in pending_leaves:
         leave_blocks.append({
@@ -96,7 +112,10 @@ def view_pending_leaves_ui(user_id):
             "block_id": f"pending_leave_{leave.id}",
             "text": {
                 "type": "mrkdwn",
-                "text": f"*Leave ID:* {leave.id}\n*From:* {leave.start_date}\n*To:* {leave.end_date}\n*Reason:* {leave.reason}"
+                "text": (f"*Leave ID:* {leave.id}\n"
+                         f"*From:* {leave.start_date.strftime('%Y-%m-%d')}\n"
+                         f"*To:* {leave.end_date.strftime('%Y-%m-%d')}\n"
+                         f"*Reason:* {leave.reason}")
             },
             "accessory": {
                 "type": "button",
@@ -108,6 +127,7 @@ def view_pending_leaves_ui(user_id):
                 "style": "danger"
             }
         })
+    
     return leave_blocks
 
 def view_pending_leaves(user_id):
@@ -115,7 +135,7 @@ def view_pending_leaves(user_id):
     if not user:
         return "User not found."
     
-    pending_leaves = LeaveRequest.query.filter_by(user_id=user.id, status='PENDING').all()
+    pending_leaves = LeaveRequest.query.filter_by(user_id=user_id, status='PENDING').all()
     if not pending_leaves:
         return "You have no pending leave requests."
     
@@ -132,7 +152,7 @@ def cancel_leave_request(user_id, leave_id):
         if user is None:
             return "User not found."
 
-        leave_request = LeaveRequest.query.filter_by(id=leave_id, user_id=user.id, status=LeaveStatus.PENDING).first()
+        leave_request = LeaveRequest.query.filter_by(id=leave_id, user_id=user.slack_id, status=LeaveStatus.PENDING).first()
         if leave_request is None:
             return "Leave request not found or not in pending status."
 
@@ -156,7 +176,7 @@ def view_past_leaves(user_id):
     if not user:
         return "User not found."
     
-    leave_requests = LeaveRequest.query.filter_by(user_id=user.id).all()
+    leave_requests = LeaveRequest.query.filter_by(user_id=user.slack_id).all()
     past_leaves = [f"Leave from {lr.start_date} to {lr.end_date}: {lr.status}" for lr in leave_requests]
     return "\n".join(past_leaves)
 

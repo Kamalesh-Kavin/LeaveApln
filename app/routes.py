@@ -1,13 +1,14 @@
 from flask import Blueprint, request, jsonify
 from .intern import apply_leave, cancel_leave_request, view_past_leaves, view_leave_balance, view_pending_leaves, view_pending_leaves_ui
 from .manager import approve_or_decline_leave, view_intern_leave_history, view_all_pending_leaves, view_all_pending_leaves_ui, format_intern_users_for_modal, handle_interactive_message, make_manager
-from .models import User,db
+from .models import User,db, ManagerMapping
 import json
 import requests
 import os
 
 bp = Blueprint('routes', __name__)
-slack_token = os.getenv("SLACK_BOT_TOKEN")
+slack_token = 'xoxb-7584405679664-7561620439074-XN60Lx3w8QAYhSCm42VI0bFP'
+print("SLACKKK",slack_token)
 
 def get_slack_user_info(user_id):
     url = f"https://slack.com/api/users.info"
@@ -32,9 +33,10 @@ def home():
 
 @bp.route('/slack/apps_home', methods=['POST'])
 def app_home():
-    # to enable link
+    # # to enable link
     # if request.json.get('type') == 'url_verification':
     #     return jsonify(challenge=request.json.get('challenge'))
+
     print("HOME UI Loading...")
     data = request.json
     print("DATA: ",data)
@@ -46,8 +48,10 @@ def app_home():
     
     user = User.query.filter_by(slack_id=user_id).first()
     print("User: ",user)
+    
     if not user:
         slack_user_info = get_slack_user_info(user_id)
+        print("Slack user info",get_slack_user_info)
         user_name = slack_user_info.get('profile', {}).get('real_name', 'Unknown')
         user = User(slack_id=user_id, name=user_name)
         db.session.add(user)
@@ -94,20 +98,31 @@ def app_home():
             ]
         })
         pending_leaves_blocks = view_pending_leaves_ui(user_id)
-        blocks.append({
-            "type": "section",
-            "block_id": "pending_leaves_header",
-            "text": {
-                "type": "plain_text",
-                "text": "Pending Leaves"
-            }
-        })
-        blocks.extend(pending_leaves_blocks)
+        if pending_leaves_blocks:
+            blocks.append({
+                "type": "section",
+                "block_id": "pending_leaves_header",
+                "text": {
+                    "type": "plain_text",
+                    "text": "Pending Leaves"
+                }
+            })
+            blocks.extend(pending_leaves_blocks)
 
     elif is_manager:
         blocks.append({
             "type": "actions",
             "elements": [
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "Apply leave",
+                        "emoji": True
+                    },
+                    "action_id": "apply_leave",
+                    "style": "primary"
+                },
                 {
                     "type": "button",
                     "text": {
@@ -129,7 +144,7 @@ def app_home():
                 }
             ]
         })
-        pending_leaves = view_all_pending_leaves_ui(user.id)
+        pending_leaves = view_all_pending_leaves_ui(user_id)
         if pending_leaves:
             blocks.append({
                 "type": "section",
@@ -140,6 +155,17 @@ def app_home():
                 }
             })
             blocks.extend(pending_leaves)
+        manager_pending_leaves = view_pending_leaves_ui(user_id)
+        if manager_pending_leaves:
+            blocks.append({
+                "type": "section",
+                "block_id": "manager_pending_leaves_header",
+                "text": {
+                    "type": "plain_text",
+                    "text": "Your Pending Leaves"
+                }
+            })
+            blocks.extend(manager_pending_leaves)
     
     response = requests.post(
         'https://slack.com/api/views.publish',
@@ -224,7 +250,7 @@ def handle_interactions():
                             "emoji": True
                         },
                         "action_id": "apply_leave",
-                        "style": "primary"  # Green button
+                        "style": "primary"  
                     },
                     {
                         "type": "button",
@@ -260,6 +286,16 @@ def handle_interactions():
                     "type": "button",
                     "text": {
                         "type": "plain_text",
+                        "text": "Apply leave",
+                        "emoji": True
+                    },
+                    "action_id": "apply_leave",
+                    "style": "primary"
+                },
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
                         "text": "View Users",
                         "emoji": True
                     },
@@ -290,7 +326,19 @@ def handle_interactions():
             }
         })
         pending_leaves_blocks = view_all_pending_leaves_ui(user_id)
-        updated_blocks = existing_blocks + pending_leaves_blocks 
+        existing_blocks = existing_blocks + pending_leaves_blocks
+        existing_blocks.append({
+            "type": "section",
+            "block_id": "manager_pending_leaves_header",
+            "text": {
+                "type": "plain_text",
+                "text": "Your Pending Leaves"
+            }
+        })
+
+        manager_pending_leaves = view_pending_leaves_ui(user_id)
+        updated_blocks = existing_blocks + manager_pending_leaves
+        print("\n Updated blocks: \n",updated_blocks)
         response = requests.post(
             'https://slack.com/api/views.publish',
             headers={
@@ -351,16 +399,15 @@ def handle_interactions():
         else:
             return 'User'
 
-    def open_intern_users_modal(trigger_id,slack_id):
+    def open_intern_users_modal(trigger_id, slack_id):
         manager = User.query.filter_by(slack_id=slack_id).first()
         if not manager:
             return "Manager not found."
-        manager_id = manager.id
-        intern_users = User.query.filter_by(manager_id=manager_id).all()
-        print("INTERNNN",intern_users[0].manager_id)
+        intern_users = [mapping.employee for mapping in manager.managed_employees]
         if not intern_users:
             return "No intern users found for this manager."
         blocks = format_intern_users_for_modal(intern_users)
+        
         response = requests.post('https://slack.com/api/views.open', headers={
             'Authorization': f'Bearer {slack_token}',
             'Content-Type': 'application/json'
@@ -376,12 +423,13 @@ def handle_interactions():
                 "blocks": blocks
             }
         })
+        
+        # Check if the request was successful
         if response.status_code == 200 and response.json().get('ok'):
-            response="ok"
+            return "ok"
         else:
-            response="no"
-        return response
-    
+            return "no"
+
     if request.content_type != 'application/x-www-form-urlencoded':
         return jsonify({"error": "Unsupported Media Type"}), 415
     payload = request.form.get('payload')
@@ -443,15 +491,18 @@ def handle_interactions():
         if callback_id == 'intern_leave_history_request':
             print("Data: ",data)
             slack_id = values.get('slack_id_block', {}).get('slack_id_input', {}).get('value')
-            user_input_id = values.get('user_id_block', {}).get('user_id_input', {}).get('value')
-            manager = User.query.filter_by(slack_id=user_id).first()
-            if slack_id:
-                user=User.query.filter_by(slack_id=slack_id).first()
-                user_identifier=user.id
-            else:
-                user_identifier=user_input_id
-            leave_history = view_intern_leave_history(user_identifier,manager.id)
-            leave_history_message = f"Leave History for {user_identifier}:\n\n" + leave_history
+            print("SLACK_ID",slack_id)
+            user = User.query.filter_by(slack_id=slack_id).first()
+            if not user:
+                return "User not found."
+            manager_mapping = ManagerMapping.query.filter_by(employee_id=slack_id).first()
+            if not manager_mapping:
+                return "No manager assigned to this user."
+            manager = User.query.filter_by(slack_id=manager_mapping.manager_id).first()
+            if not manager:
+                return "Manager not found."
+            leave_history = view_intern_leave_history(slack_id,manager.slack_id)
+            leave_history_message = f"Leave History for {user.name}:\n\n" + leave_history
 
             # Update the modal with the leave history
             update_modal_view = {
@@ -504,7 +555,7 @@ def handle_interactions():
                     "block_id": "slack_id_block",
                     "label": {
                         "type": "plain_text",
-                        "text": "Enter Slack ID (Optional)"
+                        "text": "Enter User ID"
                     },
                     "element": {
                         "type": "plain_text_input",
@@ -514,24 +565,7 @@ def handle_interactions():
                             "text": "e.g., U07GHFFEHDH"
                         }
                     },
-                    "optional": True  
-                },
-                {
-                    "type": "input",
-                    "block_id": "user_id_block",
-                    "label": {
-                        "type": "plain_text",
-                        "text": "Enter User ID (Optional)"
-                    },
-                    "element": {
-                        "type": "plain_text_input",
-                        "action_id": "user_id_input",
-                        "placeholder": {
-                            "type": "plain_text",
-                            "text": "e.g., 12345"
-                        }
-                    },
-                    "optional": True  
+                    "optional": False  
                 }
             ],
             "submit": {
@@ -557,11 +591,43 @@ def handle_interactions():
         return jsonify({"status": "ok"})
     if action_id == "view_users":
         trigger_id = data.get('trigger_id')
-        response=open_intern_users_modal(trigger_id,user_id)
-        if response=="ok":
+        print("Trigger: ", trigger_id)
+        response = open_intern_users_modal(trigger_id, user_id)
+        print("RESPONSE: ", response)
+        if response == "ok":
             return jsonify({"status": "ok"})
         else:
-            return jsonify({"status": "error", "message": "Failed to fetch user details"}), 500
+            error_message = response
+            error_response = requests.post('https://slack.com/api/views.open', headers={
+                'Authorization': f'Bearer {slack_token}',
+                'Content-Type': 'application/json'
+            }, json={
+                "trigger_id": trigger_id,
+                "view": {
+                    "type": "modal",
+                    "callback_id": "error_modal",
+                    "title": {
+                        "type": "plain_text",
+                        "text": "Error"
+                    },
+                    "blocks": [
+                        {
+                            "type": "section",
+                            "block_id": "error_message",
+                            "text": {
+                                "type": "plain_text",
+                                "text": error_message
+                            }
+                        }
+                    ]
+                }
+            })
+            
+            if error_response.status_code == 200 and error_response.json().get('ok'):
+                return jsonify({"status": "error", "message": error_message})
+            else:
+                return jsonify({"status": "error", "message": "Failed to display error message"}), 500
+
     if action_id in ["apporve","decline"]:
         response = handle_interactive_message(data)
         update_response = update_home_manager_ui(user_id, slack_token)
@@ -707,7 +773,15 @@ def handle_interactions():
     if action_id.startswith('cancel_'):
         leave_id = int(action_id.split('_')[1])
         result = cancel_leave_request(user_id, leave_id)
-        update_response = update_home_ui(user_id, slack_token)
+        user = User.query.filter_by(slack_id=user_id).first()
+        print("USERRR: ",user)
+        print("user role:",user.role)
+        if not user:
+            return jsonify({"status": "error", "message": "User not found"}), 404
+        if user.role == 'Manager':
+            update_response = update_home_manager_ui(user_id, slack_token)
+        else:
+            update_response = update_home_ui(user_id, slack_token)
         response_message = f"Leave request (ID: {leave_id}) cancelled successfully. Leave days added back to your balance."
         dm_response = send_dm_message(user_id, response_message)
         
@@ -718,33 +792,59 @@ def handle_interactions():
 
 @bp.route('/slack/admin',methods=['POST'])
 def admin_stuffs():
+    def make_admin(user_id):
+        try:
+            user = User.query.filter_by(id=user_id).first()
+            if not user:
+                return f"User with ID {user_id} not found."
+            user.is_admin = True
+            db.session.commit()
+            return f"User {user.name} (ID: {user.id}) has been promoted to Admin."
+        except Exception as e:
+            db.session.rollback()
+            return f"An error occurred while promoting user: {e}"
+
+    def is_admin(user_id):
+        user = User.query.filter_by(slack_id=user_id).first()
+        return user.is_admin if user else False
+
     data = request.form
     user_id = data.get('user_id')
     user_name = data.get('user_name')
     command = data.get('command')
     text = data.get('text', '').strip()
+
+    if not is_admin(user_id):
+        return "Access denied. Only admins can use this command."
+    
     if command == '/viewmanagers':
-        managers = User.query.filter_by(role='Manager').with_entities(User.id.label('manager_id'), User.name, User.slack_id).all()
-        print("MAN",managers)
-        manager_list = [f"Manager ID: {manager[0]} - Name: {manager[1]} - Slack ID: {manager[2]}" for manager in managers]
+        managers = User.query.filter_by(role='Manager').with_entities(User.slack_id, User.name).all()
+        print("MAN", managers)
+        manager_list = [f"Slack ID: {manager.slack_id} - Name: {manager.name}" for manager in managers]
         return "\n".join(manager_list)
     
     elif command == '/assignmanager':
         try:
             texts=text.split()
-            intern_id=int(texts[0])
-            manager_id=int(texts[1])
-            intern = User.query.filter_by(id=intern_id).first()
-            manager = User.query.filter_by(id=manager_id).first()
+            if len(texts) != 2:
+                return "Invalid format. Please use the format: /command intern_id manager_id"
+            intern_id=texts[0]
+            manager_id=texts[1]
+            intern = User.query.filter_by(slack_id=intern_id).first()
+            manager = User.query.filter_by(slack_id=manager_id).first()
             if not intern:
                 return f"Intern with ID {intern_id} not found."
             if not manager:
                 return f"Manager with ID {manager_id} not found."
             if manager.role != 'Manager':
                 return f"User with ID {manager_id} is not a manager."
-            intern.manager_id = manager.id
+            existing_mapping = ManagerMapping.query.filter_by(employee_id=intern_id).first()
+            if existing_mapping:
+                db.session.delete(existing_mapping)
+            new_mapping = ManagerMapping(employee_id=intern_id, manager_id=manager_id)
+            db.session.add(new_mapping)
             db.session.commit()
-            return f"Manager {manager.name} (ID: {manager.id}) successfully assigned to Intern {intern.name} (ID: {intern.id})."
+            return f"Manager {manager.name} (ID: {manager.slack_id}) successfully assigned to Intern {intern.name} (ID: {intern.slack_id})."
 
         except Exception as e:
             db.session.rollback() 
@@ -752,10 +852,51 @@ def admin_stuffs():
         
     elif command == '/makemanager':
         try:
-            intern_id = int(text)
+            intern_id = text
             return make_manager(intern_id)
         except ValueError:
             return "Please provide a valid intern ID."
+    
+    elif command == '/makeadmin':
+        try:
+            user_to_promote_id = int(text)
+            return make_admin(user_to_promote_id)
+        except ValueError:
+            return "Please provide a valid user ID."
+        
+    elif command == '/viewadmins':
+        admins = User.query.filter_by(is_admin=True).with_entities(User.slack_id, User.name, User.role).all()
+        if not admins:
+            return "No admins found."
+        admin_list = [f"Slack ID: {admin[0]} - Name: {admin[1]} - Role: {admin[2]}" for admin in admins]
+        return "\n".join(admin_list)
+
+    elif command == '/viewallusers':
+        users = db.session.query(
+            User.slack_id,
+            User.name,
+            User.role,
+            ManagerMapping.manager_id
+        ).outerjoin(
+            ManagerMapping, User.slack_id == ManagerMapping.employee_id
+        ).with_entities(
+            User.slack_id,
+            User.name,
+            User.role,
+            ManagerMapping.manager_id
+        ).all()
+        if not users:
+            return "No users found."
+        user_list = [
+            f"Slack ID: {user[0]} - Name: {user[1]} - Role: {user[2]} - Manager ID: {user[3] or 'None'}"
+            for user in users
+        ]
+        return "\n".join(user_list)
+    
+    else:
+        response = "Unknown command."
+
+    return jsonify(response_type='ephemeral', text=response)
         
 @bp.route('/slack/leave', methods=['POST'])
 def handle_leave():
@@ -775,7 +916,7 @@ def handle_leave():
             response = apply_leave(user_id, start_date, end_date, reason, user_name)
         except ValueError:
             response = "Please provide the start date, end date, and reason in the format: 'start_date end_date reason'."
-
+    
     elif command == '/pendingleave':
         response = view_pending_leaves(user_id)
 

@@ -1,4 +1,4 @@
-from .models import db, User, LeaveRequest, LeaveStatus
+from .models import db, User, LeaveRequest, LeaveStatus, ManagerMapping
 from .slack_bot import send_message_from_manager, update_message
 
 from app.models import db, User, LeaveRequest
@@ -17,12 +17,11 @@ def format_intern_users_for_modal(intern_users):
     for user in intern_users:
         blocks.append({
             "type": "section",
-            "block_id": f"user_{user.id}",
+            "block_id": f"user_{user.slack_id}",
             "text": {
                 "type": "mrkdwn",
-                "text": (f"*Slack ID:* {user.slack_id}\n"
+                "text": (f"*User ID:* {user.slack_id}\n"
                          f"*User Name:* {user.name}\n"
-                         f"*User ID:* {user.id}\n"
                          f"*No. of leaves remaining:* {user.leave_balance}")
             }
         })
@@ -53,7 +52,7 @@ def view_all_pending_leaves_ui(manager_id):
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "No long pending leave requests found."
+                "text": "No pending leave requests found."
             }
         }]
     
@@ -120,7 +119,7 @@ def view_all_pending_leaves():
 
 def make_manager(intern_id):
     try:
-        intern = User.query.filter_by(id=intern_id).first()
+        intern = User.query.filter_by(slack_id=intern_id).first()
         if not intern:
             return f"Intern with ID {intern_id} not found."
         if intern.role == 'Manager':
@@ -128,7 +127,7 @@ def make_manager(intern_id):
         intern.role = 'Manager'
         db.session.commit()
 
-        return f"Intern {intern.name} (ID: {intern.id}) has been promoted to Manager."
+        return f"Intern {intern.name} (ID: {intern.slack_id}) has been promoted to Manager."
 
     except Exception as e:
         db.session.rollback()
@@ -162,19 +161,22 @@ def approve_or_decline_leave(user_id, leave_id, action):
         return f"An error occurred: {e}"
     
 def view_intern_leave_history(intern_id,manager_id):
-    manager = User.query.filter_by(id=manager_id).first()
+    manager = User.query.filter_by(slack_id=manager_id).first()
     if not manager:
         return "Manager not found."
-
-    intern = User.query.filter_by(id=intern_id, manager_id=manager_id).first()
+    intern = User.query.filter_by(slack_id=intern_id).first()
     if not intern:
-        return "Intern not found or you do not have permission to view this intern's leave history."
-
-    leave_requests = LeaveRequest.query.filter_by(user_id=intern.id).all()
+        return "Intern not found."
+    if not ManagerMapping.query.filter_by(employee_id=intern.slack_id, manager_id=manager.slack_id).first():
+        return "You do not have permission to view this intern's leave history."
+    leave_requests = LeaveRequest.query.filter_by(user_id=intern.slack_id).all()
     if not leave_requests:
         return f"No leave history found for {intern.name}."
 
-    leave_history = [f"Leave ID: {lr.id} - From {lr.start_date} to {lr.end_date}: {lr.status}" for lr in leave_requests]
+    # Format leave history
+    leave_history = [
+        f"Leave ID: {lr.id} - From {lr.start_date} to {lr.end_date}: {lr.status.name}" for lr in leave_requests
+    ]
     return "\n".join(leave_history)
 
 def handle_interactive_message(payload):

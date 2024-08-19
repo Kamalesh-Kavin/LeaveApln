@@ -8,11 +8,10 @@ from dotenv import load_dotenv
 from .models import LeaveRequest,db
 
 load_dotenv(dotenv_path='../.env')
-slack_token = os.getenv("SLACK_BOT_TOKEN")
+slack_token = 'xoxb-7584405679664-7561620439074-XN60Lx3w8QAYhSCm42VI0bFP'
 client = WebClient(token=slack_token)
 
 def update_message_for_manager(channel_id, message_ts, user_name):
-    slack_token = os.getenv("SLACK_BOT_TOKEN")
     headers = {
         'Authorization': f'Bearer {slack_token}',
         'Content-Type': 'application/json'
