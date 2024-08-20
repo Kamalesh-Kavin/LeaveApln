@@ -32,7 +32,7 @@ def create_manager(slack_id, name):
         user = User.query.filter_by(slack_id=slack_id).first()
         if user:
             return "User already exists."
-        new_manager = User(slack_id=slack_id, name=name, role="Manager")
+        new_manager = User(slack_id=slack_id, name=name, role="Manager",leave_balance=14)
         db.session.add(new_manager)
         db.session.commit()
 
@@ -125,6 +125,7 @@ def make_manager(intern_id):
         if intern.role == 'Manager':
             return f"User with ID {intern_id} is already a manager."
         intern.role = 'Manager'
+        intern.leave_balance=14
         db.session.commit()
 
         return f"Intern {intern.name} (ID: {intern.slack_id}) has been promoted to Manager."

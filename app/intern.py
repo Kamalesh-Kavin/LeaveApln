@@ -14,30 +14,42 @@ def apply_leave(user_id, start_date, end_date, reason, user_name):
             db.session.add(user)
             db.session.commit()
 
-        current_month = datetime.now().strftime('%Y-%m')
-        if user.last_reset_month != current_month:
-            user.leave_balance = 2  # Reset to 2 days for the new month
-            user.last_reset_month = current_month
-            db.session.commit()
+        if user.role == 'Intern':
+            current_month = datetime.now().strftime('%Y-%m')
+            print("LASTTT RESET MONTH: ",user.last_reset_month)
+            if user.last_reset_month != current_month:
+                user.leave_balance = 2  # Reset to 2 days for the new month
+                user.last_reset_month = current_month
+                db.session.commit()
+
+        elif user.role == 'Manager':
+            current_year = datetime.now().strftime('%Y')
+            last_reset_year = user.last_reset_month.split('-')[0]
+            if last_reset_year != current_year: 
+                carry_over = max(0, user.leave_balance)
+                user.leave_balance = min(14 + carry_over, 20)  # Reset to 14 days and carry over unused leave
+                user.last_reset_month = current_year
+                db.session.commit()
 
         if user.leave_balance < leave_days:
             return "Insufficient leave balance."
 
-        current_month_start = datetime.now().replace(day=1)
-        leaves_this_month = LeaveRequest.query.filter(
-            LeaveRequest.user_id == user.slack_id,
-            LeaveRequest.start_date >= current_month_start,
-            LeaveRequest.end_date <= datetime.now().replace(day=1) + timedelta(days=31),
-            LeaveRequest.status.notin_([LeaveStatus.CANCELLED, LeaveStatus.DECLINED])
-        ).all()
+        if user.role == 'Intern':
+            current_month_start = datetime.now().replace(day=1)
+            leaves_this_month = LeaveRequest.query.filter(
+                LeaveRequest.user_id == user.slack_id,
+                LeaveRequest.start_date >= current_month_start,
+                LeaveRequest.end_date <= datetime.now().replace(day=1) + timedelta(days=31),
+                LeaveRequest.status.notin_([LeaveStatus.CANCELLED, LeaveStatus.DECLINED])
+            ).all()
 
-        total_leave_days_this_month = sum(
-            (min(leave.end_date, end_date) - max(leave.start_date, start_date)).days + 1
-            for leave in leaves_this_month
-        )
+            total_leave_days_this_month = sum(
+                (min(leave.end_date, end_date) - max(leave.start_date, start_date)).days + 1
+                for leave in leaves_this_month
+            )
 
-        if total_leave_days_this_month + leave_days > 2:
-            return "Leave limit exceeded. You can only take a maximum of 2 days leave per month."
+            if total_leave_days_this_month + leave_days > 2:
+                return "Leave limit exceeded. You can only take a maximum of 2 days leave per month."
 
         manager_mapping = ManagerMapping.query.filter_by(employee_id=user.slack_id).first()
         if not manager_mapping:
@@ -178,6 +190,8 @@ def view_past_leaves(user_id):
     
     leave_requests = LeaveRequest.query.filter_by(user_id=user.slack_id).all()
     past_leaves = [f"Leave from {lr.start_date} to {lr.end_date}: {lr.status}" for lr in leave_requests]
+    if not past_leaves:
+        return "No leave history found"
     return "\n".join(past_leaves)
 
 def view_leave_balance(user_id):

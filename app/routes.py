@@ -1,13 +1,14 @@
 from flask import Blueprint, request, jsonify
 from .intern import apply_leave, cancel_leave_request, view_past_leaves, view_leave_balance, view_pending_leaves, view_pending_leaves_ui
 from .manager import approve_or_decline_leave, view_intern_leave_history, view_all_pending_leaves, view_all_pending_leaves_ui, format_intern_users_for_modal, handle_interactive_message, make_manager
-from .models import User,db, ManagerMapping
+from .models import User,db, ManagerMapping, LeaveRequest
+from .slack_bot import update_message
 import json
 import requests
 import os
 
 bp = Blueprint('routes', __name__)
-slack_token = 'xoxb-7584405679664-7561620439074-XN60Lx3w8QAYhSCm42VI0bFP'
+slack_token = 'xoxb-7584405679664-7561620439074-XBJ88tjnGJyCGHWUZ39VIIU9'
 print("SLACKKK",slack_token)
 
 def get_slack_user_info(user_id):
@@ -941,12 +942,39 @@ def handle_leave():
             leave_id = int(text.split()[0]) 
             action = command.strip('/') 
             response = approve_or_decline_leave(user_id, leave_id, action)
+            leave_request = LeaveRequest.query.filter_by(id=leave_id).one()
+            channel_id = leave_request.channel_id
+            message_ts = leave_request.message_ts
+            updated_text = f"Leave request {leave_id} has been {action}d by <@{user_id}>."
+            updated_blocks = [
+                {
+                    "type": "section",
+                    "block_id": "section-identifier",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": updated_text
+                    }
+                },
+                {
+                    "type": "section",
+                    "block_id": "status-identifier",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"*Status:* {'Approved' if action == 'approve' else 'Declined'}"
+                    }
+                }
+            ]
+            update_message(channel_id, message_ts, updated_text, updated_blocks)
         except ValueError:
             response = "Please provide a valid leave ID."
 
     elif command == '/leavehistory':
-        intern_name = text.strip()
-        response = view_intern_leave_history(intern_name)
+        intern_id = text.strip()
+        manager_mapping = ManagerMapping.query.filter_by(employee_id=intern_id).first()
+        if not manager_mapping:
+            response="Manager not found"
+        else:
+            response = view_intern_leave_history(intern_id,manager_mapping.manager_id)
 
     elif command == '/viewpendingleaves':
         manager = User.query.filter_by(slack_id=user_id, role='Manager').first()
