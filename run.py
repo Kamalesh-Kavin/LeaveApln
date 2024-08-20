@@ -1,9 +1,10 @@
 from app import create_app
+from app.logger import log 
 
-print("Creating Flask app...")
+log.info("Creating Flask app...")
 app = create_app()
-print("Flask app created successfully.")
+log.info("Flask app created successfully.")
 
 if __name__ == "__main__":
-    print("Starting Flask app...")
+    log.info("Starting Flask app...")
     app.run(debug=True)

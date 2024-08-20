@@ -6,25 +6,12 @@ from datetime import datetime
 
 db = SQLAlchemy()
 
-import random
-
-def generate_unique_color(existing_colors):
-    excluded_color = "#808080"
-    while True:
-        color = "#{:06x}".format(random.randint(0, 0xFFFFFF))
-        if color not in existing_colors and color != excluded_color:
-            return color
-
-def assign_color_to_user(user):
-    existing_colors = set(user.color for user in User.query.filter(User.color.isnot(None)).all())
-    user.color = generate_unique_color(existing_colors)
-    db.session.commit()
-
 class LeaveStatus(enum.Enum):
     PENDING = "Pending"
     APPROVED = "Approved"
     DECLINED = "Declined"
     CANCELLED = "Cancelled"
+
 class User(db.Model):
     slack_id = db.Column(db.String(50), primary_key=True, nullable=False)
     name = db.Column(db.String(100), nullable=False)
@@ -75,13 +62,14 @@ class LeaveRequest(db.Model):
         if self.start_date > self.end_date:
             raise ValueError("Start date cannot be after the end date")
 
-class LeaveBalance(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.String(50), db.ForeignKey('user.slack_id'), nullable=False)
-    month_year = db.Column(db.String(7), nullable=False)  # Format 'YYYY-MM'
-    balance = db.Column(db.Integer, default=2)  # Default leave balance per month
+#not implemented yet
+# class LeaveBalance(db.Model):
+#     id = db.Column(db.Integer, primary_key=True)
+#     user_id = db.Column(db.String(50), db.ForeignKey('user.slack_id'), nullable=False)
+#     month_year = db.Column(db.String(7), nullable=False)  # Format 'YYYY-MM'
+#     balance = db.Column(db.Integer, default=2)  # Default leave balance per month
 
-    user = relationship("User", backref="leave_balances")
+#     user = relationship("User", backref="leave_balances")
 
-    __table_args__ = (db.UniqueConstraint('user_id', 'month_year', name='_user_month_uc'),)
+#     __table_args__ = (db.UniqueConstraint('user_id', 'month_year', name='_user_month_uc'),)
 

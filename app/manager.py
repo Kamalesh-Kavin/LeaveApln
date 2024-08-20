@@ -1,31 +1,8 @@
-from .models import db, User, LeaveRequest, LeaveStatus, ManagerMapping, assign_color_to_user
-from .slack_bot import send_message_from_manager, update_message
-
+from .models import db, User, LeaveRequest, LeaveStatus, ManagerMapping
+from .color_manager import assign_color_to_user
 from app.models import db, User, LeaveRequest
-
-def format_intern_users_for_modal(intern_users):
-    blocks = [
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "*List of Intern Users:*"
-            }
-        },
-        {"type": "divider"}
-    ]
-    for user in intern_users:
-        blocks.append({
-            "type": "section",
-            "block_id": f"user_{user.slack_id}",
-            "text": {
-                "type": "mrkdwn",
-                "text": (f"*User ID:* {user.slack_id}\n"
-                         f"*User Name:* {user.name}\n"
-                         f"*No. of leaves remaining:* {user.leave_balance}")
-            }
-        })
-    return blocks
+from .slack_message_manager import update_message, send_message_from_manager
+from .logger import log
 
 def create_manager(slack_id, name):
     try:
@@ -36,14 +13,13 @@ def create_manager(slack_id, name):
         db.session.add(new_manager)
         assign_color_to_user(new_manager)
         db.session.commit()
-
         return f"Manager user created successfully: {name} (Slack ID: {slack_id})"
     
     except Exception as e:
         return f"An error occurred: {e}"
     
 def view_all_pending_leaves_ui(manager_id):
-    print("MANAGERR",manager_id)
+    log.info("Manager id: %s",manager_id)
     pending_leaves = LeaveRequest.query.filter_by(
             status=LeaveStatus.PENDING,
             manager_id=manager_id
@@ -66,7 +42,6 @@ def view_all_pending_leaves_ui(manager_id):
         end_date = leave.end_date.strftime('%Y-%m-%d')
         reason = leave.reason
         
-        # Section block with leave details
         blocks.append({
             "type": "section",
             "block_id": f"pending_leave_{leave_id}",
@@ -79,7 +54,6 @@ def view_all_pending_leaves_ui(manager_id):
             }
         })
 
-        # Actions block with approve and decline buttons
         blocks.append({
             "type": "actions",
             "elements": [
@@ -174,94 +148,7 @@ def view_intern_leave_history(intern_id,manager_id):
     leave_requests = LeaveRequest.query.filter_by(user_id=intern.slack_id).all()
     if not leave_requests:
         return f"No leave history found for {intern.name}."
-
-    # Format leave history
     leave_history = [
         f"Leave ID: {lr.id} - From {lr.start_date} to {lr.end_date}: {lr.status.name}" for lr in leave_requests
     ]
     return "\n".join(leave_history)
-
-def handle_interactive_message_calendar(action,leave_id):
-    try:
-        leave_request = LeaveRequest.query.filter_by(id=leave_id).one()
-        print("action:",action)
-        channel_id = leave_request.channel_id
-        message_ts = leave_request.message_ts
-        manager_id = leave_request.manager_id
-        if action in ['approve', 'decline']:
-            action_type = 'approve' if action == 'approve' else 'decline'
-            # Call the function to approve or decline
-            response = approve_or_decline_leave(manager_id, leave_id, action_type)
-            updated_text = f"Leave request {leave_id} has been {action_type}d by <@{manager_id}>."
-            updated_blocks = [
-                {
-                    "type": "section",
-                    "block_id": "section-identifier",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": updated_text
-                    }
-                },
-                {
-                    "type": "section",
-                    "block_id": "status-identifier",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": f"*Status:* {'Approved' if action == 'approve' else 'Declined'}"
-                    }
-                }
-            ]
-            update_message(channel_id, message_ts, updated_text, updated_blocks)
-            return response
-        else:
-            return "Unknown action."
-    except Exception as e:
-        return f"An error occurred: {e}"
-def handle_interactive_message(payload):
-    try:
-        print("here")
-        actions = payload.get('actions', [])
-        if not actions:
-            return "No actions found in the payload."
-        action = actions[0] 
-        action_id = action.get('action_id')
-        print(action_id)
-        value = action.get('value')
-        leave_id = int(value)
-        print(leave_id)
-        channel_id = payload.get('channel', {}).get('id')
-        message_ts = payload.get('message', {}).get('ts')
-        if not channel_id or not message_ts:
-            leave_request = LeaveRequest.query.filter_by(id=leave_id).one()
-            channel_id = leave_request.channel_id
-            message_ts = leave_request.message_ts
-        print(channel_id, message_ts)
-        if action_id in ['approve', 'decline']:
-            action_type = 'approve' if action_id == 'approve' else 'decline'
-            # Call the function to approve or decline
-            response = approve_or_decline_leave(payload['user']['id'], leave_id, action_type)
-            updated_text = f"Leave request {leave_id} has been {action_type}d by <@{payload['user']['id']}>."
-            updated_blocks = [
-                {
-                    "type": "section",
-                    "block_id": "section-identifier",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": updated_text
-                    }
-                },
-                {
-                    "type": "section",
-                    "block_id": "status-identifier",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": f"*Status:* {'Approved' if action_id == 'approve' else 'Declined'}"
-                    }
-                }
-            ]
-            update_message(channel_id, message_ts, updated_text, updated_blocks)
-            return response
-        else:
-            return "Unknown action."
-    except Exception as e:
-        return f"An error occurred: {e}"

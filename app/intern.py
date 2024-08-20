@@ -1,6 +1,8 @@
-from .models import db, User, LeaveRequest, LeaveStatus, ManagerMapping, assign_color_to_user
-from .slack_bot import send_message_to_manager, update_message_for_manager
+from .models import db, User, LeaveRequest, LeaveStatus, ManagerMapping
 from datetime import datetime, timedelta
+from .color_manager import assign_color_to_user
+from .slack_message_manager import update_message_for_manager, send_message_to_manager
+from .logger import log
 
 def apply_leave(user_id, start_date, end_date, reason, user_name):
     try:
@@ -17,7 +19,7 @@ def apply_leave(user_id, start_date, end_date, reason, user_name):
 
         if user.role == 'Intern':
             current_month = datetime.now().strftime('%Y-%m')
-            print("LASTTT RESET MONTH: ",user.last_reset_month)
+            log.info("Last reset month: %s",user.last_reset_month)
             if user.last_reset_month != current_month:
                 user.leave_balance = 2  # Reset to 2 days for the new month
                 user.last_reset_month = current_month
@@ -67,11 +69,10 @@ def apply_leave(user_id, start_date, end_date, reason, user_name):
         user.leave_balance -= leave_days
         db.session.commit()
         try:
-            print(manager_mapping.manager_id)
             send_message_to_manager(manager_mapping.manager_id, leave_request.id, f"{user.name} has applied for leave from {start_date} to {end_date}.")
-            print("message sent")
+            log.info("message sent")
         except Exception as e:
-            print(f"Error sending message: {e}")
+            log.error(f"Error sending message: {e}")
 
         return (f"Leave applied successfully!\n"
                 f"User: {user_name}\n"
@@ -85,10 +86,7 @@ def apply_leave(user_id, start_date, end_date, reason, user_name):
         return f"An error occurred: {e}"
 
 def view_pending_leaves_ui(user_id):
-    # Fetch the user by their Slack ID
     user = User.query.filter_by(slack_id=user_id).first()
-    
-    # Check if the user exists
     if not user:
         return [
             {
@@ -100,11 +98,7 @@ def view_pending_leaves_ui(user_id):
                 }
             }
         ]
-    
-    # Fetch the pending leave requests for the user
     pending_leaves = LeaveRequest.query.filter_by(user_id=user_id, status='PENDING').all()
-    
-    # Check if there are pending leave requests
     if not pending_leaves:
         return [
             {
@@ -116,8 +110,6 @@ def view_pending_leaves_ui(user_id):
                 }
             }
         ]
-    
-    # Build the UI blocks for each pending leave request
     leave_blocks = []
     for leave in pending_leaves:
         leave_blocks.append({
