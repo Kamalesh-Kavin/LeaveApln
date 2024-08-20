@@ -13,7 +13,7 @@ load_dotenv(dotenv_path='../.env')
 
 
 slack_token = os.getenv("SLACK_BOT_TOKEN")
-slack_token = 'xoxb-7584405679664-7561620439074-XBJ88tjnGJyCGHWUZ39VIIU9'
+slack_token = 'xoxb-7584405679664-7561620439074-rMelMmZgomvFc2xVz9Crcsz0'
 
 ssl_context = ssl.create_default_context()
 ssl_context.check_hostname = False

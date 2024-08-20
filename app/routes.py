@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, render_template
 from .intern import apply_leave, cancel_leave_request, view_past_leaves, view_leave_balance, view_pending_leaves, view_pending_leaves_ui
-from .manager import approve_or_decline_leave, view_intern_leave_history, view_all_pending_leaves, view_all_pending_leaves_ui, format_intern_users_for_modal, handle_interactive_message, make_manager
+from .manager import approve_or_decline_leave, view_intern_leave_history, view_all_pending_leaves, view_all_pending_leaves_ui, format_intern_users_for_modal, handle_interactive_message, make_manager, handle_interactive_message_calendar
 from .models import User,db, ManagerMapping, LeaveRequest, assign_color_to_user, LeaveStatus
 from .slack_bot import update_message
 import json
@@ -9,7 +9,7 @@ import os
 from datetime import timedelta
 
 bp = Blueprint('routes', __name__)
-slack_token = 'xoxb-7584405679664-7561620439074-XBJ88tjnGJyCGHWUZ39VIIU9'
+slack_token = 'xoxb-7584405679664-7561620439074-rMelMmZgomvFc2xVz9Crcsz0'
 print("SLACKKK",slack_token)
 
 def get_slack_user_info(user_id):
@@ -35,21 +35,145 @@ def home():
 
 @bp.route('/calendar')
 def calendar():
-    return render_template('calendar.html')
+    slack_id = request.args.get('slack_id')
+    print("SLACKKK",slack_id)
+    return render_template('calendar.html',slack_id=slack_id)
 
-@bp.route('/api/leave-events', methods=['GET'])
-def get_leave_events():
-    leave_requests = LeaveRequest.query.filter_by(status=LeaveStatus.APPROVED).all()
+@bp.route('/api/leave-events/<string:slack_id>', methods=['GET'])
+def get_leave_events(slack_id):
+    manager = User.query.filter_by(slack_id=slack_id).first()
+    
+    if not manager:
+        return jsonify({"error": "Manager not found"}), 404
+    
+    # Filter leave requests where the manager_id is the current user's ID and the status is PENDING
+    leave_requests = LeaveRequest.query.filter_by(manager_id=manager.slack_id).filter(LeaveRequest.status.in_([LeaveStatus.APPROVED, LeaveStatus.PENDING])).all()
+    
     events = []
     for request in leave_requests:
-        events.append({
+        event = {
             'id': request.id,
             'title': f"{request.user.name} - {request.reason}",
             'start': request.start_date.isoformat(),
             'end': (request.end_date + timedelta(days=1)).isoformat(),  # FullCalendar expects end date to be exclusive
-            'backgroundColor': request.user.color  # Color assigned to user
-        })
+            'backgroundColor': request.user.color if request.status == LeaveStatus.APPROVED else '#808080',  # Grey for pending
+            'borderColor': '#808080' if request.status == LeaveStatus.PENDING else request.user.color,
+            'textColor': '#ffffff' if request.status == LeaveStatus.PENDING else '#000000',
+            'status': request.status.value
+        }
+        events.append(event)
     return jsonify(events)
+
+@bp.route('/api/update-leave-status/<int:leave_id>', methods=['POST'])
+def update_leave_status(leave_id):
+    def default_home_manager_ui():
+        blocks = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "Hello, How can I help you today?"
+            }
+        },
+        {
+            "type": "divider"
+        }
+        ]
+        blocks.append({
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "Apply leave",
+                        "emoji": True
+                    },
+                    "action_id": "apply_leave",
+                    "style": "primary"
+                },
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "View Users",
+                        "emoji": True
+                    },
+                    "action_id": "view_users",
+                    "style": "primary"
+                },
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "View User Leave History",
+                        "emoji": True
+                    },
+                    "action_id": "view_user_leave_history"
+                },
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "View calendar",
+                        "emoji": True
+                    },
+                    "action_id": "view_calendar"
+                },
+            ]
+        })
+        return blocks
+    
+    def update_home_manager_ui(user_id, slack_token):
+        existing_blocks = default_home_manager_ui().copy()
+        existing_blocks.append({
+            "type": "section",
+            "block_id": "pending_leaves_header",
+            "text": {
+                "type": "plain_text",
+                "text": "Pending Leave Requests"
+            }
+        })
+        pending_leaves_blocks = view_all_pending_leaves_ui(user_id)
+        existing_blocks = existing_blocks + pending_leaves_blocks
+        existing_blocks.append({
+            "type": "section",
+            "block_id": "manager_pending_leaves_header",
+            "text": {
+                "type": "plain_text",
+                "text": "Your Pending Leaves"
+            }
+        })
+
+        manager_pending_leaves = view_pending_leaves_ui(user_id)
+        updated_blocks = existing_blocks + manager_pending_leaves
+        print("\n Updated blocks: \n",updated_blocks)
+        response = requests.post(
+            'https://slack.com/api/views.publish',
+            headers={
+                'Authorization': f'Bearer {slack_token}',
+                'Content-Type': 'application/json'
+            },
+            json={
+                'user_id': user_id,
+                'view': {
+                    'type': 'home',
+                    'blocks': updated_blocks
+                }
+            }
+        )
+        return response
+    data = request.get_json()
+    print("Dattta",data["status"])
+    response = handle_interactive_message_calendar(data["status"],leave_id)
+    leave_request = LeaveRequest.query.filter_by(id=leave_id).one()
+    manager_id=leave_request.manager_id
+    update_response = update_home_manager_ui(manager_id, slack_token)
+    print("RESSponse",response)
+    if "error" in response or update_response.status_code != 200:
+            return jsonify({"status": "error", "message": "Failed to update the home UI or send DM."}), 500
+    return jsonify({'success': True})
+
 
 @bp.route('/slack/apps_home', methods=['POST'])
 def app_home():
@@ -590,7 +714,11 @@ def handle_interactions():
                 return jsonify({"status": "error", "message": response.text}), response.status_code
             
             return jsonify({"status": "ok"})
+    if action_id == "open_calendar":
+        return jsonify({"status": "ok"})
     if action_id == 'view_calendar':
+        slack_id=user_id
+        print("SES",slack_id)
         response = requests.post(
             'https://slack.com/api/views.open',
             headers={
@@ -622,17 +750,17 @@ def handle_interactions():
                                     "emoji": True
                                 },
                                 "action_id": "open_calendar",
-                                "url": f"{'https://46b1-14-99-67-22.ngrok-free.app'}/calendar"
+                                "url": f"{'https://118c-2406-7400-c6-4d18-7da9-18d7-245-9cfa.ngrok-free.app'}/calendar?slack_id={slack_id}"
                             }
                         }
                     ]
                 }
             }
         )
+        print("RESSSS: ",response)
         if response.status_code != 200:
             print(f"Error opening modal: {response.text}")
         return jsonify({"status": "ok"})
-
     if action_id == 'view_user_leave_history':
         trigger_id = data.get('trigger_id')
         print("TRI",trigger_id)
@@ -721,7 +849,6 @@ def handle_interactions():
                 return jsonify({"status": "error", "message": error_message})
             else:
                 return jsonify({"status": "error", "message": "Failed to display error message"}), 500
-
     if action_id in ["approve","decline"]:
         print("INside aprove")
         response = handle_interactive_message(data)

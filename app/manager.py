@@ -181,6 +181,42 @@ def view_intern_leave_history(intern_id,manager_id):
     ]
     return "\n".join(leave_history)
 
+def handle_interactive_message_calendar(action,leave_id):
+    try:
+        leave_request = LeaveRequest.query.filter_by(id=leave_id).one()
+        print("action:",action)
+        channel_id = leave_request.channel_id
+        message_ts = leave_request.message_ts
+        manager_id = leave_request.manager_id
+        if action in ['approve', 'decline']:
+            action_type = 'approve' if action == 'approve' else 'decline'
+            # Call the function to approve or decline
+            response = approve_or_decline_leave(manager_id, leave_id, action_type)
+            updated_text = f"Leave request {leave_id} has been {action_type}d by <@{manager_id}>."
+            updated_blocks = [
+                {
+                    "type": "section",
+                    "block_id": "section-identifier",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": updated_text
+                    }
+                },
+                {
+                    "type": "section",
+                    "block_id": "status-identifier",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"*Status:* {'Approved' if action == 'approve' else 'Declined'}"
+                    }
+                }
+            ]
+            update_message(channel_id, message_ts, updated_text, updated_blocks)
+            return response
+        else:
+            return "Unknown action."
+    except Exception as e:
+        return f"An error occurred: {e}"
 def handle_interactive_message(payload):
     try:
         print("here")

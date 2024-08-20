@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from .models import LeaveRequest,db
 
 load_dotenv(dotenv_path='../.env')
-slack_token = 'xoxb-7584405679664-7561620439074-XBJ88tjnGJyCGHWUZ39VIIU9'
+slack_token = 'xoxb-7584405679664-7561620439074-rMelMmZgomvFc2xVz9Crcsz0'
 client = WebClient(token=slack_token)
 
 def update_message_for_manager(channel_id, message_ts, user_name):
