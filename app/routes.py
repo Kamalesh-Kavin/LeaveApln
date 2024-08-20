@@ -540,6 +540,7 @@ def handle_interactions():
             manager = User.query.filter_by(slack_id=manager_mapping.manager_id).first()
             if not manager:
                 return "Manager not found."
+            leave_balance_message = view_leave_balance(slack_id)
             leave_history = view_intern_leave_history(slack_id,manager.slack_id)
             leave_history_message = f"Leave History for {user.name}:\n\n" + leave_history
 
@@ -552,6 +553,17 @@ def handle_interactions():
                     "text": "Leave History"
                 },
                 "blocks": [
+                     {
+                        "type": "section",
+                        "block_id": "leave_balance",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": leave_balance_message
+                        }
+                    },
+                    {
+                        "type": "divider"
+                    },
                     {
                         "type": "section",
                         "text": {
