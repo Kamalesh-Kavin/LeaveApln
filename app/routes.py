@@ -1,11 +1,12 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, render_template
 from .intern import apply_leave, cancel_leave_request, view_past_leaves, view_leave_balance, view_pending_leaves, view_pending_leaves_ui
 from .manager import approve_or_decline_leave, view_intern_leave_history, view_all_pending_leaves, view_all_pending_leaves_ui, format_intern_users_for_modal, handle_interactive_message, make_manager
-from .models import User,db, ManagerMapping, LeaveRequest
+from .models import User,db, ManagerMapping, LeaveRequest, assign_color_to_user, LeaveStatus
 from .slack_bot import update_message
 import json
 import requests
 import os
+from datetime import timedelta
 
 bp = Blueprint('routes', __name__)
 slack_token = 'xoxb-7584405679664-7561620439074-XBJ88tjnGJyCGHWUZ39VIIU9'
@@ -32,6 +33,24 @@ def get_slack_user_info(user_id):
 def home():
     return "Welcome to the Leave Bot Application!!"
 
+@bp.route('/calendar')
+def calendar():
+    return render_template('calendar.html')
+
+@bp.route('/api/leave-events', methods=['GET'])
+def get_leave_events():
+    leave_requests = LeaveRequest.query.filter_by(status=LeaveStatus.APPROVED).all()
+    events = []
+    for request in leave_requests:
+        events.append({
+            'id': request.id,
+            'title': f"{request.user.name} - {request.reason}",
+            'start': request.start_date.isoformat(),
+            'end': (request.end_date + timedelta(days=1)).isoformat(),  # FullCalendar expects end date to be exclusive
+            'backgroundColor': request.user.color  # Color assigned to user
+        })
+    return jsonify(events)
+
 @bp.route('/slack/apps_home', methods=['POST'])
 def app_home():
     # # to enable link
@@ -56,6 +75,7 @@ def app_home():
         user_name = slack_user_info.get('profile', {}).get('real_name', 'Unknown')
         user = User(slack_id=user_id, name=user_name)
         db.session.add(user)
+        assign_color_to_user(user)
         db.session.commit()
 
     is_intern = user.role == 'Intern'
@@ -142,7 +162,16 @@ def app_home():
                         "emoji": True
                     },
                     "action_id": "view_user_leave_history"
-                }
+                },
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "View calendar",
+                        "emoji": True
+                    },
+                    "action_id": "view_calendar"
+                },
             ]
         })
         pending_leaves = view_all_pending_leaves_ui(user_id)
@@ -311,7 +340,16 @@ def handle_interactions():
                         "emoji": True
                     },
                     "action_id": "view_user_leave_history"
-                }
+                },
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "View calendar",
+                        "emoji": True
+                    },
+                    "action_id": "view_calendar"
+                },
             ]
         })
         return blocks
@@ -540,6 +578,49 @@ def handle_interactions():
                 return jsonify({"status": "error", "message": response.text}), response.status_code
             
             return jsonify({"status": "ok"})
+    if action_id == 'view_calendar':
+        response = requests.post(
+            'https://slack.com/api/views.open',
+            headers={
+                'Authorization': f'Bearer {slack_token}',
+                'Content-Type': 'application/json'
+            },
+            json={
+                "trigger_id": data['trigger_id'],
+                "view": {
+                    "type": "modal",
+                    "callback_id": "calendar_modal",
+                    "title": {
+                        "type": "plain_text",
+                        "text": "Leave Calendar"
+                    },
+                    "blocks": [
+                        {
+                            "type": "section",
+                            "block_id": "calendar_block",
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": "Here is the leave calendar:"
+                            },
+                            "accessory": {
+                                "type": "button",
+                                "text": {
+                                    "type": "plain_text",
+                                    "text": "Open Calendar",
+                                    "emoji": True
+                                },
+                                "action_id": "open_calendar",
+                                "url": f"{'https://46b1-14-99-67-22.ngrok-free.app'}/calendar"
+                            }
+                        }
+                    ]
+                }
+            }
+        )
+        if response.status_code != 200:
+            print(f"Error opening modal: {response.text}")
+        return jsonify({"status": "ok"})
+
     if action_id == 'view_user_leave_history':
         trigger_id = data.get('trigger_id')
         print("TRI",trigger_id)
@@ -629,10 +710,12 @@ def handle_interactions():
             else:
                 return jsonify({"status": "error", "message": "Failed to display error message"}), 500
 
-    if action_id in ["apporve","decline"]:
+    if action_id in ["approve","decline"]:
+        print("INside aprove")
         response = handle_interactive_message(data)
+        print("HII")
         update_response = update_home_manager_ui(user_id, slack_token)
-        print("RESS",response)
+        print("RESSponse",response)
         if "error" in response or update_response.status_code != 200:
                 return jsonify({"status": "error", "message": "Failed to update the home UI or send DM."}), 500
         return jsonify({"status": "ok"})
@@ -845,7 +928,7 @@ def admin_stuffs():
             new_mapping = ManagerMapping(employee_id=intern_id, manager_id=manager_id)
             db.session.add(new_mapping)
             db.session.commit()
-            return f"Manager {manager.name} (ID: {manager.slack_id}) successfully assigned to Intern {intern.name} (ID: {intern.slack_id})."
+            return f"Manager {manager.name} (ID: {manager.slack_id}) successfully assigned to {intern.name} (ID: {intern.slack_id})."
 
         except Exception as e:
             db.session.rollback() 
@@ -917,6 +1000,12 @@ def handle_leave():
             response = apply_leave(user_id, start_date, end_date, reason, user_name)
         except ValueError:
             response = "Please provide the start date, end date, and reason in the format: 'start_date end_date reason'."
+    
+    elif command == "/calendar":
+        # Respond with a message
+        response =  "You can view the leave calendar here: https://46b1-14-99-67-22.ngrok-free.app/calendar"
+    
+        # return jsonify(response_message)
     
     elif command == '/pendingleave':
         response = view_pending_leaves(user_id)

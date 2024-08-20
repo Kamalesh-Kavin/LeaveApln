@@ -6,6 +6,21 @@ from datetime import datetime
 
 db = SQLAlchemy()
 
+import random
+
+def generate_unique_color(existing_colors):
+    """Generates a unique hex color code not in the existing_colors set."""
+    while True:
+        color = "#{:06x}".format(random.randint(0, 0xFFFFFF))
+        if color not in existing_colors:
+            return color
+
+def assign_color_to_user(user):
+    """Assigns a unique color to the user if they don't have one."""
+    existing_colors = set(user.color for user in User.query.filter(User.color.isnot(None)).all())
+    user.color = generate_unique_color(existing_colors)
+    db.session.commit()
+
 class LeaveStatus(enum.Enum):
     PENDING = "Pending"
     APPROVED = "Approved"
@@ -18,6 +33,7 @@ class User(db.Model):
     leave_balance = db.Column(db.Integer, default=2)  # Default leave balance
     last_reset_month = db.Column(db.String(7), nullable=False)  # To track when leave balance was last reset
     is_admin = db.Column(db.Boolean, default=False)  # To distinguish admin users
+    color = db.Column(db.String(7), unique=True, nullable=True)
 
     # Relationships
     leave_requests = relationship("LeaveRequest", back_populates="user", foreign_keys="[LeaveRequest.user_id]")
@@ -28,7 +44,7 @@ class User(db.Model):
         if not self.last_reset_month:
             # Set last_reset_month to current month and year if not provided
             self.last_reset_month = datetime.now().strftime('%Y-%m')
-            
+
 # Table for mapping employees to managers
 class ManagerMapping(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -54,4 +70,10 @@ class LeaveRequest(db.Model):
     # Relationships
     user = relationship("User", back_populates="leave_requests", foreign_keys=[user_id])
     manager = relationship("User", foreign_keys=[manager_id])
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.start_date > self.end_date:
+            raise ValueError("Start date cannot be after the end date")
+
 

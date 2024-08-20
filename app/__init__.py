@@ -1,5 +1,5 @@
 from flask import Flask
-from .models import db, User
+from .models import db, User, assign_color_to_user, generate_unique_color
 import os
 from dotenv import load_dotenv
 from slack_sdk import WebClient
@@ -23,6 +23,30 @@ ssl_context.verify_mode = ssl.CERT_NONE
 client = WebClient(token=slack_token, ssl=ssl_context)
 
 print("In init.py")
+def assign_colors_to_existing_users():
+    """Assigns unique colors to existing users without colors."""
+    users = User.query.filter(User.color.is_(None)).all()
+    existing_colors = set(user.color for user in User.query.filter(User.color.isnot(None)).all())
+
+    for user in users:
+        user.color = generate_unique_color(existing_colors)
+        existing_colors.add(user.color)
+        db.session.commit()
+
+    print("Assigned unique colors to existing users.")
+
+def assign_colors_to_existing_users():
+    """Assigns unique colors to existing users without colors."""
+    users = User.query.filter(User.color.is_(None)).all()
+    existing_colors = set(user.color for user in User.query.filter(User.color.isnot(None)).all())
+
+    for user in users:
+        user.color = generate_unique_color(existing_colors)
+        existing_colors.add(user.color)
+        db.session.commit()
+
+    print("Assigned unique colors to existing users.")
+
 def get_workspace_owner():
     try:
         response = client.users_list()
@@ -41,6 +65,7 @@ def get_workspace_owner():
                 else:
                     new_user = User(slack_id=user_id, name=user_name, is_admin=True, role="Manager", leave_balance=14)
                     db.session.add(new_user)
+                    assign_color_to_user(new_user)
                     db.session.commit()
                     return f"{user_name} has been added and set as the default admin."
             else:
@@ -83,8 +108,8 @@ def create_app():
             print("Manager leave balances updated.")
         except Exception as e:
             print(f"Error creating database tables: {e}")
+        assign_colors_to_existing_users()
 
     from . import routes
     app.register_blueprint(routes.bp)
-
     return app

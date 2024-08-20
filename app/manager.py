@@ -1,4 +1,4 @@
-from .models import db, User, LeaveRequest, LeaveStatus, ManagerMapping
+from .models import db, User, LeaveRequest, LeaveStatus, ManagerMapping, assign_color_to_user
 from .slack_bot import send_message_from_manager, update_message
 
 from app.models import db, User, LeaveRequest
@@ -34,6 +34,7 @@ def create_manager(slack_id, name):
             return "User already exists."
         new_manager = User(slack_id=slack_id, name=name, role="Manager",leave_balance=14)
         db.session.add(new_manager)
+        assign_color_to_user(new_manager)
         db.session.commit()
 
         return f"Manager user created successfully: {name} (Slack ID: {slack_id})"
@@ -182,6 +183,7 @@ def view_intern_leave_history(intern_id,manager_id):
 
 def handle_interactive_message(payload):
     try:
+        print("here")
         actions = payload.get('actions', [])
         if not actions:
             return "No actions found in the payload."

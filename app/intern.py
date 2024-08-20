@@ -1,4 +1,4 @@
-from .models import db, User, LeaveRequest, LeaveStatus, ManagerMapping
+from .models import db, User, LeaveRequest, LeaveStatus, ManagerMapping, assign_color_to_user
 from .slack_bot import send_message_to_manager, update_message_for_manager
 from datetime import datetime, timedelta
 
@@ -12,6 +12,7 @@ def apply_leave(user_id, start_date, end_date, reason, user_name):
         if user is None:
             user = User(slack_id=user_id, name=user_name, role="Intern")
             db.session.add(user)
+            assign_color_to_user(user)
             db.session.commit()
 
         if user.role == 'Intern':
