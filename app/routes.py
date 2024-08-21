@@ -633,7 +633,7 @@ def handle_leave():
             response = "Please provide the start date, end date, and reason in the format: 'start_date end_date reason'."
     
     elif command == "/calendar":
-        response =  "You can view the leave calendar here: https://46b1-14-99-67-22.ngrok-free.app/calendar"
+        response =  "You can view the leave calendar here: "+calendar_url+"/calendar?slack_id="+user_id
     
     elif command == '/pendingleave':
         response = view_pending_leaves(user_id)
