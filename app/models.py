@@ -61,15 +61,3 @@ class LeaveRequest(db.Model):
         super().__init__(**kwargs)
         if self.start_date > self.end_date:
             raise ValueError("Start date cannot be after the end date")
-
-#not implemented yet
-# class LeaveBalance(db.Model):
-#     id = db.Column(db.Integer, primary_key=True)
-#     user_id = db.Column(db.String(50), db.ForeignKey('user.slack_id'), nullable=False)
-#     month_year = db.Column(db.String(7), nullable=False)  # Format 'YYYY-MM'
-#     balance = db.Column(db.Integer, default=2)  # Default leave balance per month
-
-#     user = relationship("User", backref="leave_balances")
-
-#     __table_args__ = (db.UniqueConstraint('user_id', 'month_year', name='_user_month_uc'),)
-

@@ -82,7 +82,7 @@ def default_home_manager_ui():
                 "type": "button",
                 "text": {
                     "type": "plain_text",
-                    "text": "View User Leave History",
+                    "text": "View Users Leave History",
                     "emoji": True
                 },
                 "action_id": "view_user_leave_history"
@@ -96,6 +96,15 @@ def default_home_manager_ui():
                 },
                 "action_id": "view_calendar"
             },
+            {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "View my leave history",
+                        "emoji": True
+                    },
+                    "action_id": "view_leave_history"
+                }
         ]
     })
     return blocks

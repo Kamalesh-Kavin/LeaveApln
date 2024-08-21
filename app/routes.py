@@ -1,4 +1,5 @@
 from flask import Blueprint, request, jsonify, render_template
+from sqlalchemy import or_
 from .intern import apply_leave, cancel_leave_request, view_past_leaves, view_leave_balance, view_pending_leaves
 from .manager import approve_or_decline_leave, view_intern_leave_history, view_all_pending_leaves, make_manager
 from .models import User,db, ManagerMapping, LeaveRequest, LeaveStatus
@@ -16,6 +17,7 @@ from datetime import timedelta
 
 bp = Blueprint('routes', __name__)
 slack_token = os.getenv("SLACK_BOT_TOKEN")
+calendar_url = os.getenv("CALENDAR_URL")
 
 @bp.route('/')
 def home():
@@ -32,8 +34,14 @@ def get_leave_events(slack_id):
     manager = User.query.filter_by(slack_id=slack_id).first()
     if not manager:
         return jsonify({"error": "Manager not found"}), 404
-    # Filter leave requests where the manager_id is the current user's ID and the status is PENDING
-    leave_requests = LeaveRequest.query.filter_by(manager_id=manager.slack_id).filter(LeaveRequest.status.in_([LeaveStatus.APPROVED, LeaveStatus.PENDING])).all()
+    leave_requests = LeaveRequest.query.filter(
+        or_(
+            LeaveRequest.user_id == manager.slack_id,  
+            LeaveRequest.manager_id == manager.slack_id      
+        )
+    ).filter(
+        LeaveRequest.status.in_([LeaveStatus.APPROVED, LeaveStatus.PENDING])
+    ).all()
     events = []
     for request in leave_requests:
         event = {
@@ -248,7 +256,7 @@ def handle_interactions():
                                     "emoji": True
                                 },
                                 "action_id": "open_calendar",
-                                "url": f"{'https://118c-2406-7400-c6-4d18-7da9-18d7-245-9cfa.ngrok-free.app'}/calendar?slack_id={slack_id}"
+                                "url": f"{calendar_url}/calendar?slack_id={slack_id}"
                             }
                         }
                     ]

@@ -8,7 +8,16 @@ def apply_leave(user_id, start_date, end_date, reason, user_name):
     try:
         start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
         end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
-        leave_days = (end_date - start_date).days + 1
+
+        if end_date < start_date:
+            return "End date cannot be earlier than start date."
+        
+        leave_days = 0
+        current_date = start_date
+        while current_date <= end_date:
+            if current_date.weekday() < 5:  
+                leave_days += 1
+            current_date += timedelta(days=1)
     
         user = User.query.filter_by(slack_id=user_id).first()
         if user is None:
@@ -28,6 +37,7 @@ def apply_leave(user_id, start_date, end_date, reason, user_name):
         elif user.role == 'Manager':
             current_year = datetime.now().strftime('%Y')
             last_reset_year = user.last_reset_month.split('-')[0]
+            log.info("Last reset year: %s",last_reset_year)
             if last_reset_year != current_year: 
                 carry_over = max(0, user.leave_balance)
                 user.leave_balance = min(14 + carry_over, 20)  # Reset to 14 days and carry over unused leave
@@ -36,6 +46,16 @@ def apply_leave(user_id, start_date, end_date, reason, user_name):
 
         if user.leave_balance < leave_days:
             return "Insufficient leave balance."
+
+        overlapping_leaves = LeaveRequest.query.filter(
+            LeaveRequest.user_id == user.slack_id,
+            LeaveRequest.start_date <= end_date,
+            LeaveRequest.end_date >= start_date,
+            LeaveRequest.status.notin_([LeaveStatus.CANCELLED, LeaveStatus.DECLINED])
+        ).all()
+
+        if overlapping_leaves:
+            return "You have already applied for leave on one or more of these dates."
 
         if user.role == 'Intern':
             current_month_start = datetime.now().replace(day=1)
@@ -70,7 +90,6 @@ def apply_leave(user_id, start_date, end_date, reason, user_name):
         db.session.commit()
         try:
             send_message_to_manager(manager_mapping.manager_id, leave_request.id, f"{user.name} has applied for leave from {start_date} to {end_date}.")
-            log.info("message sent")
         except Exception as e:
             log.error(f"Error sending message: {e}")
 

@@ -6,22 +6,28 @@ from .logger import log
 from .color_manager import assign_color_to_user
 import requests
 
-def get_workspace_owner(client):
+def set_first_admin(client):
+    existing_admin = User.query.filter_by(is_admin=True).first()
+    if existing_admin:
+        log.info(f"Admin already set - {existing_admin.name}({existing_admin.slack_id})")
+        return f"Admin already set - {existing_admin.name}"
     try:
         response = client.users_list()
         if response.get("ok"):
             members = response.get("members", [])
             primary_owner = next((user for user in members if user.get('is_primary_owner')), None)
-            
             if primary_owner:
                 user_id = primary_owner['id']
                 user_name = primary_owner['real_name']
                 user = User.query.filter_by(slack_id=user_id).first()
                 if user:
-                    user.is_admin = True
-                    db.session.commit()
-                    log.info(f"{user_name} has been set as the default admin.")
-                    return f"{user_name} has been set as the default admin."
+                    if not user.is_admin:
+                        user.is_admin = True
+                        db.session.commit()
+                        log.info(f"{user_name} is already in the database and has been set as the default admin.")
+                    else:
+                        log.info(f"{user_name} is already in the database and is already an admin.")
+                    return f"{user_name} is already set as the default admin."
                 else:
                     new_user = User(slack_id=user_id, name=user_name, is_admin=True, role="Manager", leave_balance=14)
                     db.session.add(new_user)
