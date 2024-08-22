@@ -87,8 +87,8 @@ def app_home():
     log.info("Current User: %s",user)
     
     if not user:
-        slack_user_info = get_slack_user_info(user_id)
-        log.info("Slack user info: %s",get_slack_user_info)
+        slack_user_info = get_slack_user_info(user_id,slack_token)
+        log.info("Slack user info: %s",slack_user_info)
         user_name = slack_user_info.get('profile', {}).get('real_name', 'Unknown')
         user = User(slack_id=user_id, name=user_name)
         db.session.add(user)
