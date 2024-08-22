@@ -8,7 +8,14 @@ def apply_leave(user_id, start_date, end_date, reason, user_name):
     try:
         start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
         end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+        weekend_check_flag=0
+        if start_date.weekday() >= 5: 
+            start_date += timedelta(days=(7 - start_date.weekday())) 
+            weekend_check_flag=1
 
+        if start_date > end_date and weekend_check_flag:
+            return "Can't apply leave on weekend days"
+        
         if end_date < start_date:
             return "End date cannot be earlier than start date."
         
