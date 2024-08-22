@@ -22,7 +22,6 @@ def load_env(file_path):
 
 load_env('.env')
 slack_token = os.getenv("SLACK_BOT_TOKEN")
-log.info("Slack Token in Init: %s", slack_token)
 
 ssl_context = ssl.create_default_context()
 ssl_context.check_hostname = False
